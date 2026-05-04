@@ -31,11 +31,8 @@ export const slots = {
  * @param {import('../../engine/hookSystem.js').resolveSlot} resolveSlot
  */
 export async function bootstrap(config, resolveSlot) {
-  // 1. Register all slots this module exposes
-  for (const slot of Object.values(slots)) {
-    registerSlot(slot);
-  }
-
+  // 1. Slots are already registered by the pipeline in Pass 1.
+  
   // 2. After all modules have registered hooks, resolve each slot
   const imports = await resolveSlot('express:imports', config);
   const middleware = await resolveSlot('express:middleware', config);

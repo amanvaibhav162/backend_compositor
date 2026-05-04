@@ -26,20 +26,24 @@ export function topologicalSort(ir) {
   const services = ir.services;
   const graph = buildGraph(services);
 
-  // Compute in-degrees
+  // Compute in-degrees (number of dependencies this node has)
   const inDegree = new Map();
-  for (const id of graph.keys()) inDegree.set(id, 0);
+  for (const id of graph.keys()) inDegree.set(id, graph.get(id).length);
 
-  for (const [, deps] of graph) {
+  // Build dependents graph: "which nodes depend on me?"
+  const dependents = new Map();
+  for (const id of graph.keys()) dependents.set(id, []);
+
+  for (const [id, deps] of graph) {
     for (const dep of deps) {
-      if (!inDegree.has(dep)) {
+      if (!dependents.has(dep)) {
         throw new Error(`Dependency Error: Service "${dep}" is referenced but not defined.`);
       }
-      inDegree.set(dep, (inDegree.get(dep) ?? 0) + 1);
+      dependents.get(dep).push(id);
     }
   }
 
-  // Queue all nodes with in-degree 0
+  // Queue all nodes with in-degree 0 (no dependencies)
   const queue = [];
   for (const [id, degree] of inDegree) {
     if (degree === 0) queue.push(id);
@@ -52,12 +56,11 @@ export function topologicalSort(ir) {
     const node = queue.shift();
     sorted.push(node);
 
-    for (const [id, deps] of graph) {
-      if (deps.includes(node)) {
-        const newDegree = (inDegree.get(id) ?? 0) - 1;
-        inDegree.set(id, newDegree);
-        if (newDegree === 0) queue.push(id);
-      }
+    // This node is resolved. Decrement the in-degree of all nodes that depend on it.
+    for (const dependent of dependents.get(node)) {
+      const newDegree = inDegree.get(dependent) - 1;
+      inDegree.set(dependent, newDegree);
+      if (newDegree === 0) queue.push(dependent);
     }
   }
 

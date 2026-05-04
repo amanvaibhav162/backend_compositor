@@ -1,6 +1,6 @@
 import { BackForgeConfigSchema, validateSemantics } from '../engine/config.js';
 import { topologicalSort } from '../engine/orchestrator.js';
-import { resetHookSystem, resolveSlot } from '../engine/hookSystem.js';
+import { resetHookSystem, resolveSlot, registerSlot, registerHook } from '../engine/hookSystem.js';
 import { flushToDisk, resetVFS, addFile } from '../engine/emitter.js';
 
 // ── Module Registry ───────────────────────────────────────────────────────────
@@ -78,25 +78,39 @@ export async function runPipeline(rawConfig, outputDir) {
   const executionOrder = topologicalSort(ir);
   console.log(`\n📋 Execution order: ${executionOrder.join(' → ')}`);
 
-  // ── Steps 7 & 8: Reset state, run bootstraps (register slots + hooks) ─────
+  // ── Step 7 & 8: Strict Multi-Pass Compilation ─────────────────────────────
   resetHookSystem();
   resetVFS();
 
-  // Phase A: Bootstrap non-express modules first (register their hooks)
+  // Pass 1: Slot Registration
   for (const serviceId of executionOrder) {
-    const irSvc = ir.services.find((s) => s.id === serviceId);
-    const mod = MODULE_REGISTRY[irSvc.moduleId];
-    if (mod.id !== 'core:express') {
-      console.log(`  ⚙️  Bootstrapping ${mod.id} (hook registration)...`);
-      await mod.bootstrap({ ...rawConfig, project: ir.project }, resolveSlot);
+    const mod = MODULE_REGISTRY[ir.services.find(s => s.id === serviceId).moduleId];
+    if (mod.slots) {
+      for (const slot of Object.values(mod.slots)) {
+        registerSlot(slot);
+      }
     }
   }
 
-  // Phase B: Bootstrap core:express last (it resolves all slots → generates index.js)
-  const expressSvc = ir.services.find((s) => s.moduleId === 'core:express');
-  if (expressSvc) {
-    console.log(`  ⚙️  Bootstrapping core:express (slot resolution + file generation)...`);
-    await coreExpress.bootstrap({ ...rawConfig, project: ir.project }, resolveSlot);
+  // Pass 2: Hook Registration
+  for (const serviceId of executionOrder) {
+    const mod = MODULE_REGISTRY[ir.services.find(s => s.id === serviceId).moduleId];
+    if (mod.hooks) {
+      for (const hook of mod.hooks) {
+        registerHook(hook);
+      }
+    }
+  }
+
+  // Pass 3: Execution & Output Generation
+  // Run in exact DAG order
+  for (const serviceId of executionOrder) {
+    const irSvc = ir.services.find((s) => s.id === serviceId);
+    const mod = MODULE_REGISTRY[irSvc.moduleId];
+    console.log(`  ⚙️  Executing ${mod.id}...`);
+    if (mod.bootstrap) {
+      await mod.bootstrap({ ...rawConfig, project: ir.project }, resolveSlot);
+    }
   }
 
   // ── Step 8b: Generate package.json & .env.template ────────────────────────
