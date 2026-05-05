@@ -32,7 +32,7 @@ export const slots = {
  */
 export async function bootstrap(config, resolveSlot) {
   // 1. Slots are already registered by the pipeline in Pass 1.
-  
+
   // 2. After all modules have registered hooks, resolve each slot
   const imports = await resolveSlot('express:imports', config);
   const middleware = await resolveSlot('express:middleware', config);
@@ -43,11 +43,12 @@ export async function bootstrap(config, resolveSlot) {
   const middlewareLines = middleware.map((f) => f.content).join('\n');
   const routeLines = routes.map((f) => f.content).join('\n');
 
-  const indexContent = `import express from 'express';
+  const indexContent = `import 'dotenv/config';
+import express from 'express';
 ${importLines}
 
 const app = express();
-app.use(express.json());
+app.use(express.js on());
 ${middlewareLines}
 
 // ── Routes ────────────────────────────────────────

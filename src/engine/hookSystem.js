@@ -36,6 +36,10 @@ export function registerHook(hook) {
       `Tip: Ensure the module that exposes "${hook.targetSlot}" is loaded before this hook.`
     );
   }
+  // Prevent duplicate hook registrations
+  if (hookRegistry.some(h => h.name === hook.name)) {
+    return; // Silently skip duplicates
+  }
   hookRegistry.push(hook);
 }
 
