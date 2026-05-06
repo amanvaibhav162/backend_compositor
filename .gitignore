@@ -3,3 +3,4 @@ dist/
 .env
 .backforge-tmp/
 *.log
+output/
