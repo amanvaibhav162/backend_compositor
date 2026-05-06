@@ -5,6 +5,7 @@ import { z } from 'zod';
 const ServiceConfigSchema = z.object({
   id: z.string().min(1, 'Service id cannot be empty'),
   type: z.string().min(1, 'Service type cannot be empty'),
+  options: z.record(z.any()).optional().default({}),
 }).passthrough(); // allow extra keys per service
 
 const ProjectConfigSchema = z.object({

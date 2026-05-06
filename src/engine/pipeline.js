@@ -8,11 +8,13 @@ import { flushToDisk, resetVFS, addFile } from '../engine/emitter.js';
 import * as coreExpress from '../modules/core-express/index.js';
 import * as dbMongodb from '../modules/db-mongodb/index.js';
 import * as authJwt from '../modules/auth-jwt/index.js';
+import * as authOauth from '../modules/auth-oauth/index.js';
 
 const MODULE_REGISTRY = {
   [coreExpress.id]: coreExpress,
   [dbMongodb.id]: dbMongodb,
   [authJwt.id]: authJwt,
+  [authOauth.id]: authOauth,
 };
 
 // Map user-facing service types → module IDs
@@ -20,6 +22,7 @@ const TYPE_TO_MODULE = {
   express: 'core:express',
   mongodb:  'db:mongodb',
   jwt:      'auth:jwt',
+  oauth:    'auth:oauth',
 };
 
 /**
@@ -107,9 +110,9 @@ export async function runPipeline(rawConfig, outputDir) {
   for (const serviceId of executionOrder) {
     const irSvc = ir.services.find((s) => s.id === serviceId);
     const mod = MODULE_REGISTRY[irSvc.moduleId];
-    console.log(`  ⚙️  Executing ${mod.id}...`);
+    console.log(`  ⚙️  Executing ${mod.id} with options:`, irSvc.options);
     if (mod.bootstrap) {
-      await mod.bootstrap({ ...rawConfig, project: ir.project }, resolveSlot);
+      await mod.bootstrap({ ...rawConfig, project: ir.project, options: irSvc.options || {} }, resolveSlot);
     }
   }
 

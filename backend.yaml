@@ -1,0 +1,14 @@
+project:
+  name: "my-backend"
+
+services:
+  - id: "express"
+    type: "express"
+
+  - id: "database"
+    type: "mongodb"
+
+  - id: "auth"
+    type: "jwt"
+    options:
+      rbac: true

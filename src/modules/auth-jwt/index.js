@@ -2,7 +2,7 @@ import { addFile } from '../../engine/emitter.js';
 
 /**
  * Module: auth:jwt
- * Professional JWT Auth integration.
+ * Professional JWT Auth integration with RBAC support.
  */
 export const id = 'auth:jwt';
 export const provides = ['auth:jwt'];
@@ -33,6 +33,9 @@ export const hooks = [
 ];
 
 export async function bootstrap(config) {
+  const options = config.options || {};
+  const useRBAC = options.rbac === true;
+
   // ── src/models/user.model.js ───────────────────────────────────────────────
   addFile('src/models/user.model.js', `import mongoose, { Schema } from 'mongoose';
 import jwt from 'jsonwebtoken';
@@ -80,6 +83,7 @@ userSchema.methods.generateAccessToken = function () {
         {
             _id: this._id,
             email: this.email,
+            role: this.role,
         },
         process.env.ACCESS_TOKEN_SECRET,
         {
@@ -110,7 +114,7 @@ import { User } from "../models/user.model.js";
 import { ApiResponse } from "../utils/ApiResponse.js";
 
 const registerUser = asyncHandler(async (req, res) => {
-    const { email, password } = req.body;
+    const { email, password, role } = req.body;
 
     if ([email, password].some((field) => field?.trim() === "")) {
         throw new ApiError(400, "All fields are required");
@@ -121,9 +125,13 @@ const registerUser = asyncHandler(async (req, res) => {
         throw new ApiError(409, "User with email already exists");
     }
 
-    const user = await User.create({ email, password });
+    const user = await User.create({ 
+        email, 
+        password,
+        role: role || 'user'
+    });
 
-    const createdUser = await User.findById(user._id).select("-password -refreshtoken");
+    const createdUser = await User.findById(user._id).select("-password -refreshToken");
 
     if (!createdUser) {
         throw new ApiError(500, "Something went wrong while registering the user");
@@ -159,7 +167,7 @@ const loginUser = asyncHandler(async (req, res) => {
     user.refreshToken = refreshToken;
     await user.save({ validateBeforeSave: false });
 
-    const loggedInUser = await User.findById(user._id).select("-password -refreshtoken");
+    const loggedInUser = await User.findById(user._id).select("-password -refreshToken");
 
     const options = {
         httpOnly: true,
@@ -200,7 +208,7 @@ export const verifyJWT = asyncHandler(async(req, _, next) => {
     
         const decodedToken = jwt.verify(token, process.env.ACCESS_TOKEN_SECRET);
     
-        const user = await User.findById(decodedToken?._id).select("-password -refreshtoken");
+        const user = await User.findById(decodedToken?._id).select("-password -refreshToken");
     
         if (!user) {
             throw new ApiError(401, "Invalid Access Token");
@@ -214,19 +222,41 @@ export const verifyJWT = asyncHandler(async(req, _, next) => {
 });
 `);
 
+  // ── RBAC Middleware (Conditional) ──────────────────────────────────────────
+  if (useRBAC) {
+    addFile('src/middlewares/role.middleware.js', `import { ApiError } from "../utils/ApiError.js";
+
+export const checkRole = (roles) => {
+    return (req, res, next) => {
+        if (!req.user) {
+            throw new ApiError(401, "Authentication required");
+        }
+
+        if (!roles.includes(req.user.role)) {
+            throw new ApiError(403, "Access denied: Insufficient permissions");
+        }
+
+        next();
+    };
+};
+`);
+  }
+
   // ── src/routes/user.routes.js ─────────────────────────────────────────────
+  const rbacImport = useRBAC ? `import { checkRole } from "../middlewares/role.middleware.js";\n` : '';
+  const adminRoute = useRBAC ? `router.route("/admin-only").get(verifyJWT, checkRole(['admin']), (req, res) => res.send("Admin only content"));\n` : '';
+
   addFile('src/routes/user.routes.js', `import { Router } from "express";
 import { loginUser, registerUser } from "../controllers/user.controller.js";
 import { verifyJWT } from "../middlewares/auth.middleware.js";
-
+${rbacImport}
 const router = Router();
 
 router.route("/register").post(registerUser);
 router.route("/login").post(loginUser);
 
-// Secured routes example
-// router.route("/logout").post(verifyJWT, logoutUser);
-
+// Secured routes
+${adminRoute}
 export default router;
 `);
 }
