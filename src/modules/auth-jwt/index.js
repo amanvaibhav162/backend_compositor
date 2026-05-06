@@ -1,163 +1,231 @@
-import { registerHook } from '../../engine/hookSystem.js';
 import { addFile } from '../../engine/emitter.js';
 
 /**
  * Module: auth:jwt
- * Provides JWT-based authentication.
- * Requires: db:mongodb (needs User model)
- * Hooks into: express:middleware, express:routes, express:imports
+ * Professional JWT Auth integration.
  */
 export const id = 'auth:jwt';
 export const provides = ['auth:jwt'];
 export const requires = ['db:mongodb'];
 
 export const hooks = [
-  // Hook 1: Inject the auth router import into express
   {
-    name: 'auth:jwt:import-hook',
-    targetSlot: 'express:imports',
-    priority: 20,
+    name: 'auth:jwt:app-import',
+    targetSlot: 'express:app:imports',
+    priority: 10,
     async execute(_config) {
       return {
         content: '',
-        imports: [`import authRouter from './auth/router.js';`],
+        imports: [`import userRouter from './routes/user.routes.js';`],
       };
     },
   },
-  // Hook 2: Mount the auth middleware
   {
-    name: 'auth:jwt:middleware-hook',
-    targetSlot: 'express:middleware',
+    name: 'auth:jwt:app-routes',
+    targetSlot: 'express:app:routes',
     priority: 10,
     async execute(_config) {
       return {
-        content: `import { verifyToken } from './auth/middleware.js';\n// Auth middleware is applied per-route via verifyToken`,
-        imports: [],
-      };
-    },
-  },
-  // Hook 3: Mount auth routes
-  {
-    name: 'auth:jwt:routes-hook',
-    targetSlot: 'express:routes',
-    priority: 10,
-    async execute(_config) {
-      return {
-        content: `app.use('/auth', authRouter);`,
-        imports: [],
+        content: `app.use('/api/v1/users', userRouter);`,
       };
     },
   },
 ];
 
-/**
- * Bootstrap this module: register hooks and generate all auth files.
- * @param {Record<string, any>} config
- */
 export async function bootstrap(config) {
-  for (const hook of hooks) {
-    registerHook(hook);
-  }
-
-  // ── User Model ──────────────────────────────────────────────────────────────
-  addFile('src/auth/model.js', `import mongoose from 'mongoose';
+  // ── src/models/user.model.js ───────────────────────────────────────────────
+  addFile('src/models/user.model.js', `import mongoose, { Schema } from 'mongoose';
+import jwt from 'jsonwebtoken';
 import bcrypt from 'bcryptjs';
 
-const userSchema = new mongoose.Schema({
-  email:    { type: String, required: true, unique: true, lowercase: true },
-  password: { type: String, required: true, minlength: 8 },
-  role:     { type: String, enum: ['user', 'admin'], default: 'user' },
-}, { timestamps: true });
+const userSchema = new Schema(
+    {
+        email: {
+            type: String,
+            required: true,
+            unique: true,
+            lowecase: true,
+            trim: true,
+        },
+        password: {
+            type: String,
+            required: [true, 'Password is required'],
+        },
+        role: {
+            type: String,
+            enum: ['user', 'admin'],
+            default: 'user',
+        },
+        refreshToken: {
+            type: String,
+        },
+    },
+    {
+        timestamps: true,
+    }
+);
 
-// Hash password before saving
-userSchema.pre('save', async function (next) {
-  if (!this.isModified('password')) return next();
-  this.password = await bcrypt.hash(this.password, 12);
-  next();
+userSchema.pre("save", async function (next) {
+    if (!this.isModified("password")) return next();
+    this.password = await bcrypt.hash(this.password, 10);
+    next();
 });
 
-// Compare plain password to hash
-userSchema.methods.comparePassword = function (plain) {
-  return bcrypt.compare(plain, this.password);
+userSchema.methods.isPasswordCorrect = async function (password) {
+    return await bcrypt.compare(password, this.password);
 };
 
-export const User = mongoose.model('User', userSchema);
+userSchema.methods.generateAccessToken = function () {
+    return jwt.sign(
+        {
+            _id: this._id,
+            email: this.email,
+        },
+        process.env.ACCESS_TOKEN_SECRET,
+        {
+            expiresIn: process.env.ACCESS_TOKEN_EXPIRY,
+        }
+    );
+};
+
+userSchema.methods.generateRefreshToken = function () {
+    return jwt.sign(
+        {
+            _id: this._id,
+        },
+        process.env.REFRESH_TOKEN_SECRET,
+        {
+            expiresIn: process.env.REFRESH_TOKEN_EXPIRY,
+        }
+    );
+};
+
+export const User = mongoose.model("User", userSchema);
 `);
 
-  // ── JWT Service ─────────────────────────────────────────────────────────────
-  addFile('src/auth/service.js', `import jwt from 'jsonwebtoken';
-import { User } from './model.js';
+  // ── src/controllers/user.controller.js ─────────────────────────────────────
+  addFile('src/controllers/user.controller.js', `import { asyncHandler } from "../utils/asyncHandler.js";
+import { ApiError } from "../utils/ApiError.js";
+import { User } from "../models/user.model.js";
+import { ApiResponse } from "../utils/ApiResponse.js";
 
-const SECRET = process.env.JWT_SECRET;
-const EXPIRES_IN = process.env.JWT_EXPIRES_IN || '7d';
+const registerUser = asyncHandler(async (req, res) => {
+    const { email, password } = req.body;
 
-if (!SECRET) throw new Error('Missing env variable: JWT_SECRET');
+    if ([email, password].some((field) => field?.trim() === "")) {
+        throw new ApiError(400, "All fields are required");
+    }
 
-export function signToken(payload) {
-  return jwt.sign(payload, SECRET, { expiresIn: EXPIRES_IN });
-}
+    const existedUser = await User.findOne({ email });
+    if (existedUser) {
+        throw new ApiError(409, "User with email already exists");
+    }
 
-export function verifyTokenPayload(token) {
-  return jwt.verify(token, SECRET);
-}
+    const user = await User.create({ email, password });
 
-export async function registerUser({ email, password }) {
-  const existing = await User.findOne({ email });
-  if (existing) throw new Error('Email already registered');
-  const user = await User.create({ email, password });
-  return { id: user._id, email: user.email, role: user.role };
-}
+    const createdUser = await User.findById(user._id).select("-password -refreshtoken");
 
-export async function loginUser({ email, password }) {
-  const user = await User.findOne({ email });
-  if (!user) throw new Error('Invalid email or password');
-  const valid = await user.comparePassword(password);
-  if (!valid) throw new Error('Invalid email or password');
-  const token = signToken({ id: user._id, role: user.role });
-  return { token };
-}
+    if (!createdUser) {
+        throw new ApiError(500, "Something went wrong while registering the user");
+    }
+
+    return res.status(201).json(
+        new ApiResponse(200, createdUser, "User registered Successfully")
+    );
+});
+
+const loginUser = asyncHandler(async (req, res) => {
+    const { email, password } = req.body;
+
+    if (!email) {
+        throw new ApiError(400, "Email is required");
+    }
+
+    const user = await User.findOne({ email });
+
+    if (!user) {
+        throw new ApiError(404, "User does not exist");
+    }
+
+    const isPasswordValid = await user.isPasswordCorrect(password);
+
+    if (!isPasswordValid) {
+        throw new ApiError(401, "Invalid user credentials");
+    }
+
+    const accessToken = user.generateAccessToken();
+    const refreshToken = user.generateRefreshToken();
+
+    user.refreshToken = refreshToken;
+    await user.save({ validateBeforeSave: false });
+
+    const loggedInUser = await User.findById(user._id).select("-password -refreshtoken");
+
+    const options = {
+        httpOnly: true,
+        secure: true
+    };
+
+    return res
+        .status(200)
+        .cookie("accessToken", accessToken, options)
+        .cookie("refreshToken", refreshToken, options)
+        .json(
+            new ApiResponse(
+                200,
+                {
+                    user: loggedInUser, accessToken, refreshToken
+                },
+                "User logged In Successfully"
+            )
+        );
+});
+
+export { registerUser, loginUser };
 `);
 
-  // ── Middleware ──────────────────────────────────────────────────────────────
-  addFile('src/auth/middleware.js', `import { verifyTokenPayload } from './service.js';
+  // ── src/middlewares/auth.middleware.js ─────────────────────────────────────
+  addFile('src/middlewares/auth.middleware.js', `import { ApiError } from "../utils/ApiError.js";
+import { asyncHandler } from "../utils/asyncHandler.js";
+import jwt from "jsonwebtoken";
+import { User } from "../models/user.model.js";
 
-export function verifyToken(req, res, next) {
-  const header = req.headers['authorization'];
-  if (!header || !header.startsWith('Bearer ')) {
-    return res.status(401).json({ error: 'Missing or invalid Authorization header' });
-  }
-  try {
-    req.user = verifyTokenPayload(header.slice(7));
-    next();
-  } catch {
-    res.status(401).json({ error: 'Token is invalid or expired' });
-  }
-}
+export const verifyJWT = asyncHandler(async(req, _, next) => {
+    try {
+        const token = req.cookies?.accessToken || req.header("Authorization")?.replace("Bearer ", "");
+        
+        if (!token) {
+            throw new ApiError(401, "Unauthorized request");
+        }
+    
+        const decodedToken = jwt.verify(token, process.env.ACCESS_TOKEN_SECRET);
+    
+        const user = await User.findById(decodedToken?._id).select("-password -refreshtoken");
+    
+        if (!user) {
+            throw new ApiError(401, "Invalid Access Token");
+        }
+    
+        req.user = user;
+        next();
+    } catch (error) {
+        throw new ApiError(401, error?.message || "Invalid access token");
+    }
+});
 `);
 
-  // ── Router ──────────────────────────────────────────────────────────────────
-  addFile('src/auth/router.js', `import { Router } from 'express';
-import { registerUser, loginUser } from './service.js';
+  // ── src/routes/user.routes.js ─────────────────────────────────────────────
+  addFile('src/routes/user.routes.js', `import { Router } from "express";
+import { loginUser, registerUser } from "../controllers/user.controller.js";
+import { verifyJWT } from "../middlewares/auth.middleware.js";
 
 const router = Router();
 
-router.post('/register', async (req, res) => {
-  try {
-    const user = await registerUser(req.body);
-    res.status(201).json({ user });
-  } catch (err) {
-    res.status(400).json({ error: err.message });
-  }
-});
+router.route("/register").post(registerUser);
+router.route("/login").post(loginUser);
 
-router.post('/login', async (req, res) => {
-  try {
-    const result = await loginUser(req.body);
-    res.json(result);
-  } catch (err) {
-    res.status(401).json({ error: err.message });
-  }
-});
+// Secured routes example
+// router.route("/logout").post(verifyJWT, logoutUser);
 
 export default router;
 `);

@@ -1,10 +1,8 @@
-import { registerHook } from '../../engine/hookSystem.js';
 import { addFile } from '../../engine/emitter.js';
 
 /**
  * Module: db:mongodb
- * Provides a Mongoose connection.
- * Hooks into express:imports to wire DB before the server starts.
+ * Professional DB integration.
  */
 export const id = 'db:mongodb';
 export const provides = ['db:mongodb'];
@@ -12,42 +10,45 @@ export const requires = [];
 
 export const hooks = [
   {
-    name: 'db:mongodb:import-hook',
-    targetSlot: 'express:imports',
+    name: 'db:mongodb:index-import',
+    targetSlot: 'express:index:imports',
     priority: 10,
-    async execute(config) {
+    async execute(_config) {
       return {
         content: '',
-        imports: [`import { connectDB } from './db/connection.js';`, `await connectDB();`],
+        imports: [`import connectDB from './db/index.js';`],
+      };
+    },
+  },
+  {
+    name: 'db:mongodb:index-start',
+    targetSlot: 'express:index:start',
+    priority: 10,
+    async execute(_config) {
+      return {
+        content: `await connectDB();`,
       };
     },
   },
 ];
 
-/**
- * Bootstrap this module: register hooks and produce files.
- * @param {Record<string, any>} config
- */
 export async function bootstrap(config) {
-  // Register hooks
-  for (const hook of hooks) {
-    registerHook(hook);
-  }
-
-  // Generate the DB connection file
+  // Hooks are registered by the pipeline
+  
   const connectionContent = `import mongoose from 'mongoose';
+import { DB_NAME } from '../constants.js';
 
-const MONGO_URI = process.env.MONGO_URI || 'mongodb://localhost:27017/${config.project?.name ?? 'mydb'}';
+const connectDB = async () => {
+    try {
+        const connectionInstance = await mongoose.connect(\`\${process.env.MONGODB_URI}/\${DB_NAME}\`);
+        console.log(\`✅ MongoDB connected !! DB HOST: \${connectionInstance.connection.host}\`);
+    } catch (error) {
+        console.log("❌ MONGODB connection FAILED ", error);
+        process.exit(1);
+    }
+};
 
-export async function connectDB() {
-  try {
-    await mongoose.connect(MONGO_URI);
-    console.log('✅ MongoDB connected');
-  } catch (err) {
-    console.error('❌ MongoDB connection failed:', err.message);
-    process.exit(1);
-  }
-}
+export default connectDB;
 `;
-  addFile('src/db/connection.js', connectionContent);
+  addFile('src/db/index.js', connectionContent);
 }
