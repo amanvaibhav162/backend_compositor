@@ -110,9 +110,9 @@ export async function runPipeline(rawConfig, outputDir) {
   for (const serviceId of executionOrder) {
     const irSvc = ir.services.find((s) => s.id === serviceId);
     const mod = MODULE_REGISTRY[irSvc.moduleId];
-    console.log(`  ⚙️  Executing ${mod.id} with options:`, irSvc.options);
+    console.log(`  ⚙️  Executing ${mod.id}...`);
     if (mod.bootstrap) {
-      await mod.bootstrap({ ...rawConfig, project: ir.project, options: irSvc.options || {} }, resolveSlot);
+      await mod.bootstrap({ ...rawConfig, project: ir.project, options: irSvc.config?.options || {} }, resolveSlot);
     }
   }
 
