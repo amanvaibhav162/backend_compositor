@@ -17,19 +17,87 @@ const program = new Command();
 program
   .name('backforge')
   .description('🔨 Deterministic Backend Composition Engine')
-  .version(pkg.version);//prints the version from package.json
+  .version(pkg.version); // prints the version from package.json
+
+import inquirer from 'inquirer';
 
 // ── backforge init ────────────────────────────────────────────────────────────
 program
   .command('init')
   .description('Create a starter backend.yaml in the current directory')
-  .action(() => {
+  .option('-i, --interactive', 'Interactive configuration')
+  .action(async (options) => {
     const target = path.join(process.cwd(), 'backend.yaml');
     if (fs.existsSync(target)) {
       console.error('❌  backend.yaml already exists. Remove it first.');
       process.exit(1);
     }
-    const template = `project:
+
+    let template = "";
+
+    if (options.interactive) {
+      console.log('✨ Welcome to BackForge Interactive Init ✨\n');
+      
+      const answers = await inquirer.prompt([
+        {
+          type: 'input',
+          name: 'projectName',
+          message: 'Project name:',
+          default: 'my-backend'
+        },
+        {
+          type: 'list',
+          name: 'database',
+          message: 'Which database do you want to use?',
+          choices: [
+            { name: 'MongoDB', value: 'mongodb' },
+            { name: 'None', value: 'none' }
+          ]
+        },
+        {
+          type: 'confirm',
+          name: 'useJwt',
+          message: 'Include JWT Auth?',
+          default: true,
+          when: (answers) => answers.database !== 'none'
+        },
+        {
+          type: 'confirm',
+          name: 'useRbac',
+          message: 'Enable RBAC (Role Based Access Control)?',
+          default: false,
+          when: (answers) => answers.useJwt
+        },
+        {
+          type: 'confirm',
+          name: 'useOauth',
+          message: 'Include Google OAuth?',
+          default: false,
+          when: (answers) => answers.database !== 'none'
+        }
+      ]);
+
+      const { projectName, database, useJwt, useRbac, useOauth } = answers;
+
+      template += `project:\n  name: "${projectName}"\n\nservices:\n`;
+      template += `  - id: "express"\n    type: "express"\n\n`;
+      
+      if (database !== 'none') {
+        template += `  - id: "database"\n    type: "${database}"\n\n`;
+      }
+      if (useJwt) {
+        template += `  - id: "auth"\n    type: "jwt"\n`;
+        if (useRbac) {
+          template += `    options:\n      rbac: true\n`;
+        }
+        template += `\n`;
+      }
+      if (useOauth) {
+        template += `  - id: "oauth"\n    type: "oauth"\n\n`;
+      }
+    } else {
+      // Default static template
+      template = `project:
   name: "my-backend"
 
 services:
@@ -42,6 +110,8 @@ services:
   - id: "auth"
     type: "jwt"
 `;
+    }
+
     fs.writeFileSync(target, template, 'utf-8');
     console.log('✅  Created backend.yaml');
     console.log('   Edit it, then run: backforge generate');
