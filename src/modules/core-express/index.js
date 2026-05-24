@@ -1,4 +1,3 @@
-import { registerSlot } from '../../engine/hookSystem.js';
 import { addFile } from '../../engine/emitter.js';
 
 /**
@@ -8,6 +7,14 @@ import { addFile } from '../../engine/emitter.js';
 export const id = 'core:express';
 export const provides = ['core:express'];
 export const requires = [];
+export const dependencies = {
+  'express': '^4.21.2',
+  'dotenv': '^16.5.0',
+  'cors': '^2.8.5',
+  'cookie-parser': '^1.4.7',
+};
+export const envVars = `PORT=8000
+CORS_ORIGIN=*`;
 
 export const slots = {
   'express:app:imports': {
@@ -33,12 +40,9 @@ export const slots = {
 };
 
 export async function bootstrap(config, resolveSlot) {
-  // 1. Register slots
-  for (const slot of Object.values(slots)) {
-    registerSlot(slot);
-  }
+  // Slots are registered by the pipeline (Pass 1) — no manual registration needed here.
 
-  // 2. Resolve slots for app.js
+  // 1. Resolve slots for app.js
   const appImports = await resolveSlot('express:app:imports', config);
   const appMiddleware = await resolveSlot('express:app:middleware', config);
   const appRoutes = await resolveSlot('express:app:routes', config);

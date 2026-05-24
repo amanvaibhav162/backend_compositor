@@ -1,3 +1,4 @@
+//this file determines the structure of yaml file of user so that the input given by the user in yaml file is first checked against this schema using zod
 import { z } from 'zod';
 
 // ─── Schema Definitions ──────────────────────────────────────────────────────

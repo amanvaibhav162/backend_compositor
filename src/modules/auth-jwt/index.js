@@ -7,6 +7,14 @@ import { addFile } from '../../engine/emitter.js';
 export const id = 'auth:jwt';
 export const provides = ['auth:jwt'];
 export const requires = ['db:mongodb'];
+export const dependencies = {
+  'jsonwebtoken': '^9.0.2',
+  'bcryptjs': '^3.0.2',
+};
+export const envVars = `ACCESS_TOKEN_SECRET=replace_this_with_a_long_random_string
+ACCESS_TOKEN_EXPIRY=1d
+REFRESH_TOKEN_SECRET=replace_this_with_another_long_random_string
+REFRESH_TOKEN_EXPIRY=10d`;
 
 export const hooks = [
     {
@@ -47,7 +55,7 @@ const userSchema = new Schema(
             type: String,
             required: true,
             unique: true,
-            lowecase: true,
+            lowercase: true,
             trim: true,
         },
         password: {
@@ -187,6 +195,8 @@ const loginUser = asyncHandler(async (req, res) => {
                 "User logged In Successfully"
             )
         );
+});
+
     const logoutUser = asyncHandler(async (req, res) => {
     const userId = req.user._id;
 
@@ -267,7 +277,7 @@ export const checkRole = (roles) => {
     const adminRoute = useRBAC ? `router.route("/admin-only").get(verifyJWT, checkRole(['admin']), (req, res) => res.send("Admin only content"));\n` : '';
 
     addFile('src/routes/user.routes.js', `import { Router } from "express";
-import { loginUser, registerUser } from "../controllers/user.controller.js";
+import { loginUser, registerUser, logoutUser } from "../controllers/user.controller.js";
 import { verifyJWT } from "../middlewares/auth.middleware.js";
 ${rbacImport}
 const router = Router();
@@ -276,6 +286,7 @@ router.route("/register").post(registerUser);
 router.route("/login").post(loginUser);
 
 // Secured routes
+router.route("/logout").post(verifyJWT, logoutUser);
 ${adminRoute}
 export default router;
 `);

@@ -7,6 +7,12 @@ import { addFile } from '../../engine/emitter.js';
 export const id = 'auth:oauth';
 export const provides = ['auth:oauth'];
 export const requires = ['db:mongodb', 'core:express'];
+export const dependencies = {
+  'passport': '^0.7.0',
+  'passport-google-oauth20': '^2.0.0',
+};
+export const envVars = `GOOGLE_CLIENT_ID=your_google_client_id
+GOOGLE_CLIENT_SECRET=your_google_client_secret`;
 
 export const hooks = [
   {
