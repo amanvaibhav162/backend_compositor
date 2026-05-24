@@ -20,9 +20,9 @@ const MODULE_REGISTRY = {
 // Map user-facing service types → module IDs
 const TYPE_TO_MODULE = {
   express: 'core:express',
-  mongodb:  'db:mongodb',
-  jwt:      'auth:jwt',
-  oauth:    'auth:oauth',
+  mongodb: 'db:mongodb',
+  jwt: 'auth:jwt',
+  oauth: 'auth:oauth',
 };
 
 /**
@@ -121,9 +121,9 @@ export async function runPipeline(rawConfig, outputDir) {
     name: ir.project.name,
     version: '1.0.0',
     type: 'module',
-    scripts: { 
-      "start": "node src/index.js", 
-      "dev": "node --watch src/index.js" 
+    scripts: {
+      "start": "node src/index.js",
+      "dev": "node --watch src/index.js"
     },
     dependencies: {
       "express": "^4.21.2",

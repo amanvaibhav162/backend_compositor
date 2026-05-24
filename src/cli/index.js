@@ -1,20 +1,23 @@
 #!/usr/bin/env node
-import { Command } from 'commander';
-import { createRequire } from 'module';
-import fs from 'fs';
-import path from 'path';
-import { parse } from 'yaml';
+import { Command } from 'commander';//imports command class so that a new object can be created to use its methods
+import { createRequire } from 'module';//package.json is not ESM , so we use this to import
+import fs from 'fs';//nodes filesystem module for reading writing files and creating directories
+import path from 'path';//node path module for path manipulation
+import { parse } from 'yaml';//yaml module for parsing yaml files
 import { runPipeline } from '../engine/pipeline.js';
 
+//createRequire helps to create a require function in ESM to load the package.json
+//import.meta.url gives the URL of the current module
 const require = createRequire(import.meta.url);
-const pkg = require('../../package.json');
+const pkg = require('../../package.json');//loads package.json in the current directory
 
 const program = new Command();
 
+//setting the initial command name and description , version from package.json
 program
   .name('backforge')
   .description('🔨 Deterministic Backend Composition Engine')
-  .version(pkg.version);
+  .version(pkg.version);//prints the version from package.json
 
 // ── backforge init ────────────────────────────────────────────────────────────
 program

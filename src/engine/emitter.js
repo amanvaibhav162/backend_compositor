@@ -21,7 +21,7 @@ export function addFile(filePath, content) {
 
 /**
  * Flush all VFS files to disk atomically.
- * Only called after the ENTIRE pipeline succeeds.
+ * Only called after the ENTIRE pipeline succeeds. (IMPORTANT!!!)
  * @param {string} outputDir - The root output directory
  */
 export function flushToDisk(outputDir) {
