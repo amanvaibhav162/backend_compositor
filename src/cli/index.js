@@ -1,10 +1,13 @@
 #!/usr/bin/env node
 import { Command } from 'commander';//imports command class so that a new object can be created to use its methods
 import { createRequire } from 'module';//package.json is not ESM , so we use this to import
-import fs from 'fs';//nodes filesystem module for reading writing files and creating directories
-import path from 'path';//node path module for path manipulation
-import { parse } from 'yaml';//yaml module for parsing yaml files
+import fs from 'fs';
+import path from 'path';
+import os from 'os';
+import { spawnSync } from 'child_process';
+import { parse } from 'yaml';
 import { runPipeline } from '../engine/pipeline.js';
+import { flushToDisk } from '../engine/emitter.js';
 
 //createRequire helps to create a require function in ESM to load the package.json
 //import.meta.url gives the URL of the current module
@@ -123,6 +126,7 @@ program
   .description('Generate backend from a YAML config file')
   .argument('[file]', 'Path to your YAML config', 'backend.yaml')
   .option('-o, --out <dir>', 'Output directory', './output')
+  .option('-d, --dry-run', 'Preview generated files without writing to disk')
   .action(async (file, opts) => {
     const yamlPath = path.resolve(process.cwd(), file);
 
@@ -143,12 +147,70 @@ program
     }
 
     try {
-      await runPipeline(rawConfig, path.resolve(process.cwd(), opts.out));
+      const vfs = await runPipeline(rawConfig, path.resolve(process.cwd(), opts.out));
+      
+      if (opts.dryRun) {
+        console.log('\n🔍 [DRY RUN] Previewing generated files:\n');
+        for (const [filePath, content] of vfs.entries()) {
+          console.log(`\n📄 ${filePath}\n${'-'.repeat(40)}\n${content}\n${'-'.repeat(40)}`);
+        }
+        return;
+      }
+      
+      // Interactive VFS Edit Mode
+      let editing = true;
+      while (editing) {
+        const { action } = await inquirer.prompt([
+          {
+            type: 'list',
+            name: 'action',
+            message: 'Generated files are ready in memory. What would you like to do?',
+            choices: [
+              { name: '✅ Save to disk', value: 'save' },
+              { name: '📝 Edit a file', value: 'edit' },
+              { name: '❌ Cancel generation', value: 'cancel' }
+            ]
+          }
+        ]);
+        
+        if (action === 'save') {
+          editing = false;
+        } else if (action === 'cancel') {
+          console.log('Generation cancelled.');
+          process.exit(0);
+        } else if (action === 'edit') {
+          const { fileToEdit } = await inquirer.prompt([
+            {
+              type: 'list',
+              name: 'fileToEdit',
+              message: 'Which file do you want to edit?',
+              choices: Array.from(vfs.keys()),
+              pageSize: 15
+            }
+          ]);
+          
+          const tempFile = path.join(os.tmpdir(), `backforge-${Date.now()}-${path.basename(fileToEdit)}`);
+          fs.writeFileSync(tempFile, vfs.get(fileToEdit));
+          
+          const editor = process.env.EDITOR || 'nano';
+          spawnSync(editor, [tempFile], { stdio: 'inherit' });
+          
+          const newContent = fs.readFileSync(tempFile, 'utf-8');
+          vfs.set(fileToEdit, newContent);
+          fs.unlinkSync(tempFile);
+          
+          console.log(`\n✅ Updated ${fileToEdit} in memory.\n`);
+        }
+      }
+
+      flushToDisk(path.resolve(process.cwd(), opts.out));
+
       console.log(`\n✅  Backend generated successfully → ${opts.out}/`);
       console.log('   Next steps:');
       console.log(`     cd ${opts.out}`);
       console.log('     cp .env.template .env');
       console.log('     npm install && npm start\n');
+      
     } catch (err) {
       console.error(`\n❌  Compilation failed:\n   ${err.message}\n`);
       process.exit(1);

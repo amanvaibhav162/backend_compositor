@@ -1,7 +1,7 @@
 import { BackForgeConfigSchema, validateSemantics } from '../engine/config.js';
 import { topologicalSort } from '../engine/orchestrator.js';
 import { resetHookSystem, resolveSlot, registerSlot, registerHook } from '../engine/hookSystem.js';
-import { flushToDisk, resetVFS, addFile } from '../engine/emitter.js';
+import { flushToDisk, resetVFS, addFile, getVFS } from '../engine/emitter.js';
 
 // ── Module Registry ───────────────────────────────────────────────────────────
 // Add new modules here as they are built
@@ -168,6 +168,6 @@ npm run dev
 \`\`\`
 `);
 
-  // ── Step 9: Flush VFS to disk ──────────────────────────────────────────────
-  flushToDisk(outputDir);
+  // ── Step 9: Return VFS ─────────────────────────────────────────────────────
+  return getVFS();
 }
