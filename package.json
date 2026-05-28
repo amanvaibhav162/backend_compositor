@@ -3,9 +3,13 @@
   "version": "1.0.0",
   "description": "Deterministic Backend Composition Engine",
   "main": "src/cli/index.js",
+  "bin": {
+    "backforge": "src/cli/index.js"
+  },
   "type": "module",
   "scripts": {
     "start": "node src/cli/index.js",
+    "backforge": "node src/cli/index.js",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [],
