@@ -1,13 +1,10 @@
-//this file determines the structure of yaml file of user so that the input given by the user in yaml file is first checked against this schema using zod
 import { z } from 'zod';
-
-// ─── Schema Definitions ──────────────────────────────────────────────────────
 
 const ServiceConfigSchema = z.object({
   id: z.string().min(1, 'Service id cannot be empty'),
   type: z.string().min(1, 'Service type cannot be empty'),
   options: z.record(z.any()).optional().default({}),
-}).passthrough(); // allow extra keys per service
+}).passthrough();
 
 const ProjectConfigSchema = z.object({
   name: z.string().min(1, 'Project name cannot be empty'),
@@ -18,13 +15,6 @@ export const BackForgeConfigSchema = z.object({
   services: z.array(ServiceConfigSchema).min(1, 'At least one service is required'),
 });
 
-// ─── Semantic Validation ──────────────────────────────────────────────────────
-
-/**
- * Validates semantic rules (e.g. auth requires database).
- * @param {import('./types.js').InternalConfig} config
- * @returns {{ valid: boolean, errors: string[] }}
- */
 export function validateSemantics(config) {
   const errors = [];
   const ids = new Set(config.services.map((s) => s.id));

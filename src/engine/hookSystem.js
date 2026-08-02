@@ -1,22 +1,7 @@
-/**
- * @fileoverview Slot/Hook System
- * Handles registration of slots and hooks, then merges fragments deterministically.
- */
-
-// ─── In-memory registries ─────────────────────────────────────────────────────
-
-/** @type {Map<string, import('./types.js').SlotDefinition>} */
 const slotRegistry = new Map();
 
-/** @type {import('./types.js').HookDefinition[]} */
 const hookRegistry = [];
 
-// ─── Registration ─────────────────────────────────────────────────────────────
-
-/**
- * Register a slot so hooks can target it.
- * @param {import('./types.js').SlotDefinition} slot
- */
 export function registerSlot(slot) {
   if (slotRegistry.has(slot.name)) {
     console.warn(`⚠️  Slot "${slot.name}" is already registered. Skipping duplicate.`);
@@ -25,10 +10,6 @@ export function registerSlot(slot) {
   slotRegistry.set(slot.name, slot);
 }
 
-/**
- * Register a hook to be injected into a slot.
- * @param {import('./types.js').HookDefinition} hook
- */
 export function registerHook(hook) {
   if (!slotRegistry.has(hook.targetSlot)) {
     throw new Error(
@@ -36,27 +17,17 @@ export function registerHook(hook) {
       `Tip: Ensure the module that exposes "${hook.targetSlot}" is loaded before this hook.`
     );
   }
-  // Prevent duplicate hook registrations
   if (hookRegistry.some(h => h.name === hook.name)) {
-    return; // Silently skip duplicates
+    return;
   }
   hookRegistry.push(hook);
 }
 
-// ─── Resolution ───────────────────────────────────────────────────────────────
-
-/**
- * Resolve all hooks for a given slot, sorted by priority (deterministic).
- * @param {string} slotName
- * @param {Record<string, any>} config
- * @returns {Promise<import('./types.js').CodeFragment[]>}
- */
 export async function resolveSlot(slotName, config) {
   const hooks = hookRegistry
     .filter((h) => h.targetSlot === slotName)
     .sort((a, b) => {
       if (a.priority !== b.priority) return a.priority - b.priority;
-      // Alphabetical fallback for 100% determinism
       return a.name.localeCompare(b.name);
     });
 
@@ -72,9 +43,6 @@ export async function resolveSlot(slotName, config) {
   return fragments;
 }
 
-/**
- * Reset registries (useful for testing).
- */
 export function resetHookSystem() {
   slotRegistry.clear();
   hookRegistry.length = 0;

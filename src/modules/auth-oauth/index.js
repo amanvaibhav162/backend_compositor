@@ -1,9 +1,5 @@
 import { addFile } from '../../engine/emitter.js';
 
-/**
- * Module: auth:oauth
- * Google OAuth2 integration using Passport.js.
- */
 export const id = 'auth:oauth';
 export const provides = ['auth:oauth'];
 export const requires = ['db:mongodb', 'core:express'];
@@ -53,7 +49,6 @@ export const hooks = [
 ];
 
 export async function bootstrap(config) {
-  // ── src/middlewares/passport.js ──────────────────────────────────────────
   addFile('src/middlewares/passport.js', `import passport from 'passport';
 import { Strategy as GoogleStrategy } from 'passport-google-oauth20';
 import { User } from '../models/user.model.js';
@@ -94,7 +89,6 @@ passport.deserializeUser(async (id, done) => {
 });
 `);
 
-  // ── src/routes/auth.routes.js ────────────────────────────────────────────
   addFile('src/routes/auth.routes.js', `import { Router } from 'express';
 import passport from 'passport';
 
@@ -106,7 +100,6 @@ router.get('/google',
 router.get('/google/callback', 
   passport.authenticate('google', { failureRedirect: '/login' }),
   function(req, res) {
-    // Successful authentication, redirect home.
     res.redirect('/');
   });
 

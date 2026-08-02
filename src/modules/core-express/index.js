@@ -1,9 +1,5 @@
 import { addFile } from '../../engine/emitter.js';
 
-/**
- * Module: core:express
- * Provides the base Express HTTP server with a professional folder structure.
- */
 export const id = 'core:express';
 export const provides = ['core:express'];
 export const requires = [];
@@ -40,21 +36,15 @@ export const slots = {
 };
 
 export async function bootstrap(config, resolveSlot) {
-  // Slots are registered by the pipeline (Pass 1) — no manual registration needed here.
-
-  // 1. Resolve slots for app.js
   const appImports = await resolveSlot('express:app:imports', config);
   const appMiddleware = await resolveSlot('express:app:middleware', config);
   const appRoutes = await resolveSlot('express:app:routes', config);
 
-  // 3. Resolve slots for index.js
   const indexImports = await resolveSlot('express:index:imports', config);
   const indexStart = await resolveSlot('express:index:start', config);
 
-  // ── src/constants.js ────────────────────────────────────────────────────────
   addFile('src/constants.js', `export const DB_NAME = "${config.project?.name || 'backforge_db'}";\n`);
 
-  // ── src/utils/asyncHandler.js ───────────────────────────────────────────────
   addFile('src/utils/asyncHandler.js', `const asyncHandler = (requestHandler) => {
     return (req, res, next) => {
         Promise.resolve(requestHandler(req, res, next)).catch((err) => next(err));
@@ -64,7 +54,6 @@ export async function bootstrap(config, resolveSlot) {
 export { asyncHandler };
 `);
 
-  // ── src/utils/ApiError.js ──────────────────────────────────────────────────
   addFile('src/utils/ApiError.js', `class ApiError extends Error {
     constructor(
         statusCode,
@@ -90,7 +79,6 @@ export { asyncHandler };
 export { ApiError };
 `);
 
-  // ── src/utils/ApiResponse.js ───────────────────────────────────────────────
   addFile('src/utils/ApiResponse.js', `class ApiResponse {
     constructor(statusCode, data, message = "Success") {
         this.statusCode = statusCode;
@@ -103,7 +91,6 @@ export { ApiError };
 export { ApiResponse };
 `);
 
-  // ── src/app.js ─────────────────────────────────────────────────────────────
   const appImportsContent = appImports.flatMap(f => f.imports || []).join('\n');
   const appMiddlewareContent = appMiddleware.map(f => f.content).join('\n');
   const appRoutesContent = appRoutes.map(f => f.content).join('\n');
@@ -126,10 +113,8 @@ app.use(express.urlencoded({ extended: true, limit: "16kb" }));
 app.use(express.static("public"));
 app.use(cookieParser());
 
-// Middleware
 ${appMiddlewareContent}
 
-// Routes
 ${appRoutesContent}
 
 app.get('/health', (req, res) => {
@@ -139,7 +124,6 @@ app.get('/health', (req, res) => {
 export { app };
 `);
 
-  // ── src/index.js ───────────────────────────────────────────────────────────
   const indexImportsContent = indexImports.flatMap(f => f.imports || []).join('\n');
   const indexStartContent = indexStart.map(f => f.content).join('\n');
 
@@ -162,7 +146,6 @@ const startServer = async () => {
 startServer();
 `);
 
-  // ── Directories ────────────────────────────────────────────────────────────
   addFile('public/temp/.gitkeep', '');
   addFile('.gitignore', `node_modules\n.env\npublic/temp/*\n`);
 }

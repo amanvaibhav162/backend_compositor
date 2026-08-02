@@ -1,6 +1,6 @@
 #!/usr/bin/env node
-import { Command } from 'commander';//imports command class so that a new object can be created to use its methods
-import { createRequire } from 'module';//package.json is not ESM , so we use this to import
+import { Command } from 'commander';
+import { createRequire } from 'module';
 import fs from 'fs';
 import path from 'path';
 import os from 'os';
@@ -9,22 +9,18 @@ import { parse } from 'yaml';
 import { runPipeline } from '../engine/pipeline.js';
 import { flushToDisk } from '../engine/emitter.js';
 
-//createRequire helps to create a require function in ESM to load the package.json
-//import.meta.url gives the URL of the current module
 const require = createRequire(import.meta.url);
-const pkg = require('../../package.json');//loads package.json in the current directory
+const pkg = require('../../package.json');
 
 const program = new Command();
 
-//setting the initial command name and description , version from package.json
 program
   .name('backforge')
   .description('🔨 Deterministic Backend Composition Engine')
-  .version(pkg.version); // prints the version from package.json
+  .version(pkg.version);
 
 import inquirer from 'inquirer';
 
-// ── backforge init ────────────────────────────────────────────────────────────
 program
   .command('init')
   .description('Create a starter backend.yaml in the current directory')
@@ -99,7 +95,6 @@ program
         template += `  - id: "oauth"\n    type: "oauth"\n\n`;
       }
     } else {
-      // Default static template
       template = `project:
   name: "my-backend"
 
@@ -120,7 +115,6 @@ services:
     console.log('   Edit it, then run: backforge generate');
   });
 
-// ── backforge generate ────────────────────────────────────────────────────────
 program
   .command('generate')
   .description('Generate backend from a YAML config file')
@@ -157,7 +151,6 @@ program
         return;
       }
       
-      // Interactive VFS Edit Mode
       let editing = true;
       while (editing) {
         const { action } = await inquirer.prompt([

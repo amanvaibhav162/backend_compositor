@@ -1,9 +1,5 @@
 import { addFile } from '../../engine/emitter.js';
 
-/**
- * Module: db:mongodb
- * Professional DB integration.
- */
 export const id = 'db:mongodb';
 export const provides = ['db:mongodb'];
 export const requires = [];
@@ -37,8 +33,6 @@ export const hooks = [
 ];
 
 export async function bootstrap(config) {
-  // Hooks are registered by the pipeline
-
   const connectionContent = `import mongoose from 'mongoose';
 import { DB_NAME } from '../constants.js';
 

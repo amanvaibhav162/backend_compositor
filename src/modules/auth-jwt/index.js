@@ -1,9 +1,5 @@
 import { addFile } from '../../engine/emitter.js';
 
-/**
- * Module: auth:jwt
- * Professional JWT Auth integration with RBAC support.
- */
 export const id = 'auth:jwt';
 export const provides = ['auth:jwt'];
 export const requires = ['db:mongodb'];
@@ -44,7 +40,6 @@ export async function bootstrap(config) {
     const options = config.options || {};
     const useRBAC = options.rbac === true;
 
-    // ── src/models/user.model.js ───────────────────────────────────────────────
     addFile('src/models/user.model.js', `import mongoose, { Schema } from 'mongoose';
 import jwt from 'jsonwebtoken';
 import bcrypt from 'bcryptjs';
@@ -115,7 +110,6 @@ userSchema.methods.generateRefreshToken = function () {
 export const User = mongoose.model("User", userSchema);
 `);
 
-    // ── src/controllers/user.controller.js ─────────────────────────────────────
     addFile('src/controllers/user.controller.js', `import { asyncHandler } from "../utils/asyncHandler.js";
 import { ApiError } from "../utils/ApiError.js";
 import { User } from "../models/user.model.js";
@@ -222,7 +216,6 @@ const loginUser = asyncHandler(async (req, res) => {
 export { registerUser, loginUser, logoutUser };
 `);
 
-    // ── src/middlewares/auth.middleware.js ─────────────────────────────────────
     addFile('src/middlewares/auth.middleware.js', `import { ApiError } from "../utils/ApiError.js";
 import { asyncHandler } from "../utils/asyncHandler.js";
 import jwt from "jsonwebtoken";
@@ -252,7 +245,6 @@ export const verifyJWT = asyncHandler(async(req, _, next) => {
 });
 `);
 
-    // ── RBAC Middleware (Conditional) ──────────────────────────────────────────
     if (useRBAC) {
         addFile('src/middlewares/role.middleware.js', `import { ApiError } from "../utils/ApiError.js";
 
@@ -272,7 +264,6 @@ export const checkRole = (roles) => {
 `);
     }
 
-    // ── src/routes/user.routes.js ─────────────────────────────────────────────
     const rbacImport = useRBAC ? `import { checkRole } from "../middlewares/role.middleware.js";\n` : '';
     const adminRoute = useRBAC ? `router.route("/admin-only").get(verifyJWT, checkRole(['admin']), (req, res) => res.send("Admin only content"));\n` : '';
 
@@ -285,7 +276,6 @@ const router = Router();
 router.route("/register").post(registerUser);
 router.route("/login").post(loginUser);
 
-// Secured routes
 router.route("/logout").post(verifyJWT, logoutUser);
 ${adminRoute}
 export default router;
