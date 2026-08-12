@@ -1,8 +1,10 @@
-const slotRegistry = new Map();
+import type { Slot, Hook, HookResult, ModuleBootstrapConfig } from './types.js';
 
-const hookRegistry = [];
+const slotRegistry: Map<string, Slot> = new Map();
 
-export function registerSlot(slot) {
+const hookRegistry: Hook[] = [];
+
+export function registerSlot(slot: Slot): void {
   if (slotRegistry.has(slot.name)) {
     console.warn(`⚠️  Slot "${slot.name}" is already registered. Skipping duplicate.`);
     return;
@@ -10,7 +12,7 @@ export function registerSlot(slot) {
   slotRegistry.set(slot.name, slot);
 }
 
-export function registerHook(hook) {
+export function registerHook(hook: Hook): void {
   if (!slotRegistry.has(hook.targetSlot)) {
     throw new Error(
       `Hook Safety Error: Hook "${hook.name}" targets slot "${hook.targetSlot}" which does not exist.\n` +
@@ -23,7 +25,7 @@ export function registerHook(hook) {
   hookRegistry.push(hook);
 }
 
-export async function resolveSlot(slotName, config) {
+export async function resolveSlot(slotName: string, config: ModuleBootstrapConfig): Promise<HookResult[]> {
   const hooks = hookRegistry
     .filter((h) => h.targetSlot === slotName)
     .sort((a, b) => {
@@ -31,19 +33,19 @@ export async function resolveSlot(slotName, config) {
       return a.name.localeCompare(b.name);
     });
 
-  const fragments = [];
+  const fragments: HookResult[] = [];
   for (const hook of hooks) {
     try {
       const fragment = await hook.execute(config);
       fragments.push(fragment);
     } catch (err) {
-      throw new Error(`Hook Execution Error in "${hook.name}": ${err.message}`);
+      throw new Error(`Hook Execution Error in "${hook.name}": ${(err as Error).message}`);
     }
   }
   return fragments;
 }
 
-export function resetHookSystem() {
+export function resetHookSystem(): void {
   slotRegistry.clear();
   hookRegistry.length = 0;
 }

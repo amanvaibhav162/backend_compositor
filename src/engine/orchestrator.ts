@@ -1,19 +1,26 @@
-function buildGraph(services) {
-  const graph = new Map();
+import type { IR } from './types.js';
+
+interface ServiceWithDeps {
+  id: string;
+  dependsOn?: string[];
+}
+
+function buildGraph(services: ServiceWithDeps[]): Map<string, string[]> {
+  const graph = new Map<string, string[]>();
   for (const svc of services) {
     graph.set(svc.id, svc.dependsOn ?? []);
   }
   return graph;
 }
 
-export function topologicalSort(ir) {
+export function topologicalSort(ir: IR): string[] {
   const services = ir.services;
   const graph = buildGraph(services);
 
-  const inDegree = new Map();
-  for (const id of graph.keys()) inDegree.set(id, graph.get(id).length);
+  const inDegree = new Map<string, number>();
+  for (const id of graph.keys()) inDegree.set(id, graph.get(id)!.length);
 
-  const dependents = new Map();
+  const dependents = new Map<string, string[]>();
   for (const id of graph.keys()) dependents.set(id, []);
 
   for (const [id, deps] of graph) {
@@ -21,23 +28,23 @@ export function topologicalSort(ir) {
       if (!dependents.has(dep)) {
         throw new Error(`Dependency Error: Service "${dep}" is referenced but not defined.`);
       }
-      dependents.get(dep).push(id);
+      dependents.get(dep)!.push(id);
     }
   }
 
-  const queue = [];
+  const queue: string[] = [];
   for (const [id, degree] of inDegree) {
     if (degree === 0) queue.push(id);
   }
 
-  const sorted = [];
+  const sorted: string[] = [];
   while (queue.length > 0) {
     queue.sort();
-    const node = queue.shift();
+    const node = queue.shift()!;
     sorted.push(node);
 
-    for (const dependent of dependents.get(node)) {
-      const newDegree = inDegree.get(dependent) - 1;
+    for (const dependent of dependents.get(node)!) {
+      const newDegree = inDegree.get(dependent)! - 1;
       inDegree.set(dependent, newDegree);
       if (newDegree === 0) queue.push(dependent);
     }

@@ -8,6 +8,7 @@
 
 <p align="center">
   <img src="https://img.shields.io/badge/node-%3E%3D18-brightgreen" alt="Node">
+  <img src="https://img.shields.io/badge/typescript-5.8-blue" alt="TypeScript">
   <img src="https://img.shields.io/badge/license-ISC-blue" alt="License">
   <img src="https://img.shields.io/badge/version-1.0.0-orange" alt="Version">
 </p>
@@ -16,9 +17,9 @@
 
 ## What is BackForge?
 
-BackForge is a **code-generation CLI** that compiles a declarative YAML configuration into a fully-structured Express.js backend. Instead of copy-pasting boilerplate or wiring up auth / database logic by hand, you define _what_ your backend needs and BackForge deterministically assembles the code for you.
+BackForge is a **TypeScript-powered code-generation CLI** that compiles a declarative YAML configuration into a fully-structured Express.js backend. Instead of copy-pasting boilerplate or wiring up auth / database logic by hand, you define _what_ your backend needs and BackForge deterministically assembles the code for you.
 
-**Key idea:** Same input YAML → same output code, every time. No randomness, no AI hallucinations — just a well-defined compiler pipeline.
+**Key idea:** Same input YAML → same output code, every time. No randomness, no AI hallucinations — just a well-defined compiler pipeline with compile-time type safety.
 
 ---
 
@@ -26,6 +27,7 @@ BackForge is a **code-generation CLI** that compiles a declarative YAML configur
 
 | Feature | Description |
 |---|---|
+| **TypeScript Engine** | Fully written in TypeScript with strict compile-time checks for all plugins and engine modules |
 | **Declarative YAML config** | Define services, databases, and auth in a simple `backend.yaml` file |
 | **Modular architecture** | Plug-in modules for Express, MongoDB, JWT, OAuth — easily extensible |
 | **Compiler pipeline** | 9-step deterministic pipeline: Parse → Validate → IR → DAG → Compile → Emit |
@@ -49,7 +51,13 @@ git clone <repo-url> && cd backend_compositor
 npm install
 ```
 
-### 2. Initialize a project
+### 2. Type-check the project
+
+```bash
+npm run typecheck
+```
+
+### 3. Initialize a project configuration
 
 ```bash
 # Static template
@@ -76,7 +84,7 @@ services:
     type: "jwt"
 ```
 
-### 3. Generate your backend
+### 4. Generate your backend
 
 ```bash
 npm run backforge generate
@@ -84,7 +92,7 @@ npm run backforge generate
 
 BackForge compiles the YAML, resolves dependencies, and emits a complete project into `./output/`.
 
-### 4. Run the generated backend
+### 5. Run the generated backend
 
 ```bash
 cd output
@@ -134,19 +142,12 @@ YAML File
   ▼
 ┌─────────────────────────────────────────────────┐
 │  Step 1–2: Parse YAML                           │
-├─────────────────────────────────────────────────┤
 │  Step 3: Normalize to InternalConfig            │
-├─────────────────────────────────────────────────┤
 │  Step 4: Validate (Zod schema + semantic rules) │
-├─────────────────────────────────────────────────┤
 │  Step 5: Build IR (Intermediate Representation) │
-├─────────────────────────────────────────────────┤
 │  Step 6: DAG sort (Kahn's algorithm)            │
-├─────────────────────────────────────────────────┤
 │  Step 7: Slot + Hook registration               │
-├─────────────────────────────────────────────────┤
 │  Step 8: Module execution + code generation     │
-├─────────────────────────────────────────────────┤
 │  Step 9: VFS flush to disk                      │
 └─────────────────────────────────────────────────┘
   │
@@ -169,19 +170,21 @@ Modules communicate through a **slot/hook** mechanism for deterministic code inj
 backend_compositor/
 ├── src/
 │   ├── cli/
-│   │   └── index.js           # CLI entry point (Commander.js)
+│   │   └── index.ts            # CLI entry point (Commander.js + tsx runner)
 │   ├── engine/
-│   │   ├── config.js           # Zod schemas + semantic validation
-│   │   ├── emitter.js          # Virtual file system (VFS)
-│   │   ├── hookSystem.js       # Slot/Hook registry + resolution
-│   │   ├── orchestrator.js     # DAG topological sort (Kahn's)
-│   │   ├── pipeline.js         # 9-step compiler pipeline
-│   │   └── types.js            # JSDoc type definitions
-│   └── modules/
-│       ├── core-express/       # Express.js base server
-│       ├── db-mongodb/         # MongoDB/Mongoose integration
-│       ├── auth-jwt/           # JWT auth (access + refresh tokens)
-│       └── auth-oauth/         # Google OAuth2 via Passport.js
+│   │   ├── config.ts           # Zod schemas + semantic validation
+│   │   ├── emitter.ts          # Virtual file system (VFS)
+│   │   ├── hookSystem.ts       # Slot/Hook registry + resolution
+│   │   ├── orchestrator.ts     # DAG topological sort (Kahn's)
+│   │   ├── pipeline.ts         # 9-step compiler pipeline
+│   │   └── types.ts            # Shared TypeScript type definitions
+│   ├── modules/
+│   │   ├── core-express/       # Express.js base server
+│   │   ├── db-mongodb/         # MongoDB/Mongoose integration
+│   │   ├── auth-jwt/           # JWT auth (access + refresh tokens)
+│   │   └── auth-oauth/         # Google OAuth2 via Passport.js
+│   └── declarations.d.ts       # Ambient type definitions for untyped modules
+├── tsconfig.json               # TypeScript project configuration
 └── package.json
 ```
 
@@ -303,61 +306,56 @@ output/
 
 ## 🧩 Writing Custom Modules
 
-Each module is a single ES module file that exports:
+Modules are written as TypeScript files exporting values that satisfy the `ModuleDefinition` interface.
 
-```js
-// Unique module identifier
+```typescript
+import { addFile } from '../../engine/emitter.js';
+import type { Hook, ModuleBootstrapConfig, ModuleDefinition, Slot } from '../../engine/types.js';
+
 export const id = 'feature:my-module';
+export const provides: string[] = ['feature:my-module'];
+export const requires: string[] = ['core:express'];
 
-// What this module provides
-export const provides = ['feature:my-module'];
+export const dependencies: Record<string, string> = {
+  'some-package': '^1.0.0'
+};
 
-// Module dependencies (other module IDs)
-export const requires = ['core:express'];
-
-// npm packages to include in generated package.json
-export const dependencies = { 'some-package': '^1.0.0' };
-
-// Environment variables for .env.template
 export const envVars = `MY_VAR=default_value`;
 
-// Slots this module exposes (optional)
-export const slots = {
+export const slots: Record<string, Slot> = {
   'my-module:config': {
     name: 'my-module:config',
     description: 'Inject config into my module',
   },
 };
 
-// Hooks this module injects into other modules' slots (optional)
-export const hooks = [
+export const hooks: Hook[] = [
   {
     name: 'my-module:express-route',
     targetSlot: 'express:app:routes',
     priority: 20,
-    async execute(config) {
+    async execute(config: ModuleBootstrapConfig) {
       return { content: `app.use('/my-route', myRouter);` };
     },
   },
 ];
 
-// Main code generation function
-export async function bootstrap(config, resolveSlot) {
+export async function bootstrap(config: ModuleBootstrapConfig): Promise<void> {
   addFile('src/my-feature.js', `// generated code here`);
 }
 ```
 
-Then register it in `src/engine/pipeline.js`:
+Then register it in `src/engine/pipeline.ts`:
 
-```js
+```typescript
 import * as myModule from '../modules/my-module/index.js';
 
-const MODULE_REGISTRY = {
+const MODULE_REGISTRY: Record<string, ModuleDefinition> = {
   // ...existing modules
-  [myModule.id]: myModule,
+  [myModule.id]: myModule as ModuleDefinition,
 };
 
-const TYPE_TO_MODULE = {
+const TYPE_TO_MODULE: Record<string, string> = {
   // ...existing mappings
   'my-module': 'feature:my-module',
 };
@@ -367,12 +365,20 @@ const TYPE_TO_MODULE = {
 
 ## ⚙️ Dependencies
 
+### Production Dependencies
 | Package | Purpose |
 |---|---|
 | [commander](https://www.npmjs.com/package/commander) | CLI framework |
 | [inquirer](https://www.npmjs.com/package/inquirer) | Interactive prompts |
 | [yaml](https://www.npmjs.com/package/yaml) | YAML parsing |
 | [zod](https://www.npmjs.com/package/zod) | Schema validation |
+
+### Developer Dependencies
+| Package | Purpose |
+|---|---|
+| [typescript](https://www.npmjs.com/package/typescript) | Static typing |
+| [tsx](https://www.npmjs.com/package/tsx) | Execute TS files directly without separate build step |
+| [@types/node](https://www.npmjs.com/package/@types/node) | Node.js type definitions |
 
 ---
 

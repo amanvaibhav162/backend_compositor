@@ -1,9 +1,10 @@
 import { addFile } from '../../engine/emitter.js';
+import type { Slot, Hook, HookResult, ModuleBootstrapConfig, SlotResolver } from '../../engine/types.js';
 
 export const id = 'core:express';
-export const provides = ['core:express'];
-export const requires = [];
-export const dependencies = {
+export const provides: string[] = ['core:express'];
+export const requires: string[] = [];
+export const dependencies: Record<string, string> = {
   'express': '^4.21.2',
   'dotenv': '^16.5.0',
   'cors': '^2.8.5',
@@ -12,7 +13,7 @@ export const dependencies = {
 export const envVars = `PORT=8000
 CORS_ORIGIN=*`;
 
-export const slots = {
+export const slots: Record<string, Slot> = {
   'express:app:imports': {
     name: 'express:app:imports',
     description: 'Inject imports into app.js',
@@ -35,7 +36,9 @@ export const slots = {
   },
 };
 
-export async function bootstrap(config, resolveSlot) {
+export async function bootstrap(config: ModuleBootstrapConfig, resolveSlot?: SlotResolver): Promise<void> {
+  if (!resolveSlot) throw new Error('core:express requires a resolveSlot function');
+
   const appImports = await resolveSlot('express:app:imports', config);
   const appMiddleware = await resolveSlot('express:app:middleware', config);
   const appRoutes = await resolveSlot('express:app:routes', config);
@@ -91,9 +94,9 @@ export { ApiError };
 export { ApiResponse };
 `);
 
-  const appImportsContent = appImports.flatMap(f => f.imports || []).join('\n');
-  const appMiddlewareContent = appMiddleware.map(f => f.content).join('\n');
-  const appRoutesContent = appRoutes.map(f => f.content).join('\n');
+  const appImportsContent = appImports.flatMap((f: HookResult) => f.imports || []).join('\n');
+  const appMiddlewareContent = appMiddleware.map((f: HookResult) => f.content).join('\n');
+  const appRoutesContent = appRoutes.map((f: HookResult) => f.content).join('\n');
 
   addFile('src/app.js', `import express from 'express';
 import cors from 'cors';
@@ -124,8 +127,8 @@ app.get('/health', (req, res) => {
 export { app };
 `);
 
-  const indexImportsContent = indexImports.flatMap(f => f.imports || []).join('\n');
-  const indexStartContent = indexStart.map(f => f.content).join('\n');
+  const indexImportsContent = indexImports.flatMap((f: HookResult) => f.imports || []).join('\n');
+  const indexStartContent = indexStart.map((f: HookResult) => f.content).join('\n');
 
   addFile('src/index.js', `import 'dotenv/config';
 import { app } from './app.js';

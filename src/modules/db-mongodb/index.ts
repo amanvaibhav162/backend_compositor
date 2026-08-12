@@ -1,19 +1,20 @@
 import { addFile } from '../../engine/emitter.js';
+import type { Hook, ModuleBootstrapConfig } from '../../engine/types.js';
 
 export const id = 'db:mongodb';
-export const provides = ['db:mongodb'];
-export const requires = [];
-export const dependencies = {
+export const provides: string[] = ['db:mongodb'];
+export const requires: string[] = [];
+export const dependencies: Record<string, string> = {
   'mongoose': '^8.13.2',
 };
 export const envVars = `MONGODB_URI=mongodb://localhost:27017`;
 
-export const hooks = [
+export const hooks: Hook[] = [
   {
     name: 'db:mongodb:index-import',
     targetSlot: 'express:index:imports',
     priority: 10,
-    async execute(_config) {
+    async execute(_config: ModuleBootstrapConfig) {
       return {
         content: '',
         imports: [`import connectDB from './db/db.js';`],
@@ -24,7 +25,7 @@ export const hooks = [
     name: 'db:mongodb:index-start',
     targetSlot: 'express:index:start',
     priority: 10,
-    async execute(_config) {
+    async execute(_config: ModuleBootstrapConfig) {
       return {
         content: `await connectDB();`,
       };
@@ -32,7 +33,7 @@ export const hooks = [
   },
 ];
 
-export async function bootstrap(config) {
+export async function bootstrap(_config: ModuleBootstrapConfig): Promise<void> {
   const connectionContent = `import mongoose from 'mongoose';
 import { DB_NAME } from '../constants.js';
 

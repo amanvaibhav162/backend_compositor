@@ -1,9 +1,10 @@
 import { z } from 'zod';
+import type { BackForgeConfig } from './types.ts';
 
-const ServiceConfigSchema = z.object({
+export const ServiceConfigSchema = z.object({
   id: z.string().min(1, 'Service id cannot be empty'),
   type: z.string().min(1, 'Service type cannot be empty'),
-  options: z.record(z.any()).optional().default({}),
+  options: z.record(z.string(), z.any()).optional().default({}),
 }).passthrough();
 
 const ProjectConfigSchema = z.object({
@@ -15,8 +16,8 @@ export const BackForgeConfigSchema = z.object({
   services: z.array(ServiceConfigSchema).min(1, 'At least one service is required'),
 });
 
-export function validateSemantics(config) {
-  const errors = [];
+export function validateSemantics(config: BackForgeConfig): { valid: boolean; errors: string[] } {
+  const errors: string[] = [];
   const ids = new Set(config.services.map((s) => s.id));
 
   for (const service of config.services) {

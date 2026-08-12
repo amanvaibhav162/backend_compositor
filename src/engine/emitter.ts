@@ -1,13 +1,13 @@
 import fs from 'fs';
 import path from 'path';
 
-const vfs = new Map();
+const vfs: Map<string, string> = new Map();
 
-export function addFile(filePath, content) {
+export function addFile(filePath: string, content: string): void {
   vfs.set(filePath, content);
 }
 
-export function flushToDisk(outputDir) {
+export function flushToDisk(outputDir: string): void {
   for (const [relativePath, content] of vfs) {
     const fullPath = path.join(outputDir, relativePath);
     fs.mkdirSync(path.dirname(fullPath), { recursive: true });
@@ -15,10 +15,10 @@ export function flushToDisk(outputDir) {
   }
 }
 
-export function getVFS() {
+export function getVFS(): Map<string, string> {
   return vfs;
 }
 
-export function resetVFS() {
+export function resetVFS(): void {
   vfs.clear();
 }

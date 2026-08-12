@@ -1,9 +1,10 @@
 import { addFile } from '../../engine/emitter.js';
+import type { Hook, ModuleBootstrapConfig } from '../../engine/types.js';
 
 export const id = 'auth:jwt';
-export const provides = ['auth:jwt'];
-export const requires = ['db:mongodb'];
-export const dependencies = {
+export const provides: string[] = ['auth:jwt'];
+export const requires: string[] = ['db:mongodb'];
+export const dependencies: Record<string, string> = {
   'jsonwebtoken': '^9.0.2',
   'bcryptjs': '^3.0.2',
 };
@@ -12,12 +13,12 @@ ACCESS_TOKEN_EXPIRY=1d
 REFRESH_TOKEN_SECRET=replace_this_with_another_long_random_string
 REFRESH_TOKEN_EXPIRY=10d`;
 
-export const hooks = [
+export const hooks: Hook[] = [
     {
         name: 'auth:jwt:app-import',
         targetSlot: 'express:app:imports',
         priority: 10,
-        async execute(_config) {
+        async execute(_config: ModuleBootstrapConfig) {
             return {
                 content: '',
                 imports: [`import userRouter from './routes/user.routes.js';`],
@@ -28,7 +29,7 @@ export const hooks = [
         name: 'auth:jwt:app-routes',
         targetSlot: 'express:app:routes',
         priority: 10,
-        async execute(_config) {
+        async execute(_config: ModuleBootstrapConfig) {
             return {
                 content: `app.use('/api/v1/users', userRouter);`,
             };
@@ -36,7 +37,7 @@ export const hooks = [
     },
 ];
 
-export async function bootstrap(config) {
+export async function bootstrap(config: ModuleBootstrapConfig): Promise<void> {
     const options = config.options || {};
     const useRBAC = options.rbac === true;
 

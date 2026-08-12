@@ -1,21 +1,22 @@
 import { addFile } from '../../engine/emitter.js';
+import type { Hook, ModuleBootstrapConfig } from '../../engine/types.js';
 
 export const id = 'auth:oauth';
-export const provides = ['auth:oauth'];
-export const requires = ['db:mongodb', 'core:express'];
-export const dependencies = {
+export const provides: string[] = ['auth:oauth'];
+export const requires: string[] = ['db:mongodb', 'core:express'];
+export const dependencies: Record<string, string> = {
   'passport': '^0.7.0',
   'passport-google-oauth20': '^2.0.0',
 };
 export const envVars = `GOOGLE_CLIENT_ID=your_google_client_id
 GOOGLE_CLIENT_SECRET=your_google_client_secret`;
 
-export const hooks = [
+export const hooks: Hook[] = [
   {
     name: 'auth:oauth:app-import',
     targetSlot: 'express:app:imports',
     priority: 10,
-    async execute(_config) {
+    async execute(_config: ModuleBootstrapConfig) {
       return {
         content: '',
         imports: [
@@ -30,7 +31,7 @@ export const hooks = [
     name: 'auth:oauth:app-middleware',
     targetSlot: 'express:app:middleware',
     priority: 10,
-    async execute(_config) {
+    async execute(_config: ModuleBootstrapConfig) {
       return {
         content: `app.use(passport.initialize());`,
       };
@@ -40,7 +41,7 @@ export const hooks = [
     name: 'auth:oauth:app-routes',
     targetSlot: 'express:app:routes',
     priority: 10,
-    async execute(_config) {
+    async execute(_config: ModuleBootstrapConfig) {
       return {
         content: `app.use('/auth', authRouter);`,
       };
@@ -48,7 +49,7 @@ export const hooks = [
   },
 ];
 
-export async function bootstrap(config) {
+export async function bootstrap(_config: ModuleBootstrapConfig): Promise<void> {
   addFile('src/middlewares/passport.js', `import passport from 'passport';
 import { Strategy as GoogleStrategy } from 'passport-google-oauth20';
 import { User } from '../models/user.model.js';

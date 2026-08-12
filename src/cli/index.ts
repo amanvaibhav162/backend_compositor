@@ -1,16 +1,17 @@
-#!/usr/bin/env node
+#!/usr/bin/env tsx
 import { Command } from 'commander';
-import { createRequire } from 'module';
 import fs from 'fs';
 import path from 'path';
 import os from 'os';
 import { spawnSync } from 'child_process';
 import { parse } from 'yaml';
+import inquirer from 'inquirer';
 import { runPipeline } from '../engine/pipeline.js';
 import { flushToDisk } from '../engine/emitter.js';
 
-const require = createRequire(import.meta.url);
-const pkg = require('../../package.json');
+const pkg = JSON.parse(fs.readFileSync(new URL('../../package.json', import.meta.url), 'utf-8')) as {
+  version: string;
+};
 
 const program = new Command();
 
@@ -19,13 +20,11 @@ program
   .description('🔨 Deterministic Backend Composition Engine')
   .version(pkg.version);
 
-import inquirer from 'inquirer';
-
 program
   .command('init')
   .description('Create a starter backend.yaml in the current directory')
   .option('-i, --interactive', 'Interactive configuration')
-  .action(async (options) => {
+  .action(async (options: { interactive?: boolean }) => {
     const target = path.join(process.cwd(), 'backend.yaml');
     if (fs.existsSync(target)) {
       console.error('❌  backend.yaml already exists. Remove it first.');
@@ -58,23 +57,29 @@ program
           name: 'useJwt',
           message: 'Include JWT Auth?',
           default: true,
-          when: (answers) => answers.database !== 'none'
+          when: (answers: Record<string, unknown>) => answers.database !== 'none'
         },
         {
           type: 'confirm',
           name: 'useRbac',
           message: 'Enable RBAC (Role Based Access Control)?',
           default: false,
-          when: (answers) => answers.useJwt
+          when: (answers: Record<string, unknown>) => answers.useJwt as boolean
         },
         {
           type: 'confirm',
           name: 'useOauth',
           message: 'Include Google OAuth?',
           default: false,
-          when: (answers) => answers.database !== 'none'
+          when: (answers: Record<string, unknown>) => answers.database !== 'none'
         }
-      ]);
+      ]) as {
+        projectName: string;
+        database: string;
+        useJwt?: boolean;
+        useRbac?: boolean;
+        useOauth?: boolean;
+      };
 
       const { projectName, database, useJwt, useRbac, useOauth } = answers;
 
@@ -121,7 +126,7 @@ program
   .argument('[file]', 'Path to your YAML config', 'backend.yaml')
   .option('-o, --out <dir>', 'Output directory', './output')
   .option('-d, --dry-run', 'Preview generated files without writing to disk')
-  .action(async (file, opts) => {
+  .action(async (file: string, opts: { out: string; dryRun?: boolean }) => {
     const yamlPath = path.resolve(process.cwd(), file);
 
     if (!fs.existsSync(yamlPath)) {
@@ -132,12 +137,13 @@ program
 
     console.log(`\n🔨 BackForge — Compiling ${file}...\n`);
 
-    let rawConfig;
+    let rawConfig: Record<string, unknown>;
     try {
-      rawConfig = parse(fs.readFileSync(yamlPath, 'utf-8'));
+      rawConfig = parse(fs.readFileSync(yamlPath, 'utf-8')) as Record<string, unknown>;
     } catch (err) {
-      console.error(`❌  Failed to parse YAML: ${err.message}`);
+      console.error(`❌  Failed to parse YAML: ${(err as Error).message}`);
       process.exit(1);
+      return;
     }
 
     try {
@@ -164,7 +170,7 @@ program
               { name: '❌ Cancel generation', value: 'cancel' }
             ]
           }
-        ]);
+        ]) as { action: string };
         
         if (action === 'save') {
           editing = false;
@@ -180,10 +186,10 @@ program
               choices: Array.from(vfs.keys()),
               pageSize: 15
             }
-          ]);
+          ]) as { fileToEdit: string };
           
           const tempFile = path.join(os.tmpdir(), `backforge-${Date.now()}-${path.basename(fileToEdit)}`);
-          fs.writeFileSync(tempFile, vfs.get(fileToEdit));
+          fs.writeFileSync(tempFile, vfs.get(fileToEdit)!);
           
           const editor = process.env.EDITOR || 'nano';
           spawnSync(editor, [tempFile], { stdio: 'inherit' });
@@ -205,7 +211,7 @@ program
       console.log('     npm install && npm start\n');
       
     } catch (err) {
-      console.error(`\n❌  Compilation failed:\n   ${err.message}\n`);
+      console.error(`\n❌  Compilation failed:\n   ${(err as Error).message}\n`);
       process.exit(1);
     }
   });

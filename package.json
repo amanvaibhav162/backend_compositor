@@ -2,14 +2,15 @@
   "name": "backend_compositor",
   "version": "1.0.0",
   "description": "Deterministic Backend Composition Engine",
-  "main": "src/cli/index.js",
+  "main": "src/cli/index.ts",
   "bin": {
-    "backforge": "src/cli/index.js"
+    "backforge": "src/cli/index.ts"
   },
   "type": "module",
   "scripts": {
-    "start": "node src/cli/index.js",
-    "backforge": "node src/cli/index.js",
+    "start": "tsx src/cli/index.ts",
+    "backforge": "tsx src/cli/index.ts",
+    "typecheck": "tsc --noEmit",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [],
@@ -20,5 +21,10 @@
     "inquirer": "^9.2.16",
     "yaml": "^2.8.4",
     "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "@types/node": "^26.2.0",
+    "tsx": "^4.23.12",
+    "typescript": "^7.0.2"
   }
 }

@@ -1,31 +1,32 @@
-import { BackForgeConfigSchema, validateSemantics } from '../engine/config.js';
-import { topologicalSort } from '../engine/orchestrator.js';
-import { resetHookSystem, resolveSlot, registerSlot, registerHook } from '../engine/hookSystem.js';
-import { flushToDisk, resetVFS, addFile, getVFS } from '../engine/emitter.js';
+import { BackForgeConfigSchema, validateSemantics } from './config.js';
+import { topologicalSort } from './orchestrator.js';
+import { resetHookSystem, resolveSlot, registerSlot, registerHook } from './hookSystem.js';
+import { resetVFS, addFile, getVFS } from './emitter.js';
+import type { ModuleDefinition, IR, IRService, ServiceConfig, ModuleBootstrapConfig } from './types.js';
 
 import * as coreExpress from '../modules/core-express/index.js';
 import * as dbMongodb from '../modules/db-mongodb/index.js';
 import * as authJwt from '../modules/auth-jwt/index.js';
 import * as authOauth from '../modules/auth-oauth/index.js';
 
-const MODULE_REGISTRY = {
+const MODULE_REGISTRY: Record<string, ModuleDefinition> = {
   [coreExpress.id]: coreExpress,
   [dbMongodb.id]: dbMongodb,
   [authJwt.id]: authJwt,
   [authOauth.id]: authOauth,
 };
 
-const TYPE_TO_MODULE = {
+const TYPE_TO_MODULE: Record<string, string> = {
   express: 'core:express',
   mongodb: 'db:mongodb',
   jwt: 'auth:jwt',
   oauth: 'auth:oauth',
 };
 
-export async function runPipeline(rawConfig, outputDir) {
+export async function runPipeline(rawConfig: Record<string, unknown>, outputDir: string): Promise<Map<string, string>> {
   const internalConfig = {
-    project: rawConfig.project,
-    services: (rawConfig.services ?? []).map((svc) => ({
+    project: rawConfig.project as { name: string },
+    services: ((rawConfig.services as ServiceConfig[]) ?? []).map((svc) => ({
       ...svc,
       id: svc.id,
       type: svc.type,
@@ -34,7 +35,7 @@ export async function runPipeline(rawConfig, outputDir) {
 
   const parsed = BackForgeConfigSchema.safeParse(internalConfig);
   if (!parsed.success) {
-    const messages = parsed.error.errors.map((e) => `  • ${e.path.join('.')}: ${e.message}`);
+    const messages = parsed.error.issues.map((e) => `  • ${e.path.join('.')}: ${e.message}`);
     throw new Error(`Schema Validation Failed:\n${messages.join('\n')}`);
   }
 
@@ -43,9 +44,9 @@ export async function runPipeline(rawConfig, outputDir) {
     throw new Error(`Semantic Validation Failed:\n${semanticErrors.map((e) => `  • ${e}`).join('\n')}`);
   }
 
-  const ir = {
+  const ir: IR = {
     project: internalConfig.project,
-    services: internalConfig.services.map((svc) => {
+    services: internalConfig.services.map((svc): IRService => {
       const moduleId = TYPE_TO_MODULE[svc.type] ?? svc.type;
       const mod = MODULE_REGISTRY[moduleId];
       if (!mod) throw new Error(`Unknown module type: "${svc.type}". No module registered for it.`);
@@ -54,7 +55,7 @@ export async function runPipeline(rawConfig, outputDir) {
         type: svc.type,
         moduleId,
         dependsOn: mod.requires.map((req) =>
-          Object.keys(internalConfig.services.reduce((acc, s) => {
+          Object.keys(internalConfig.services.reduce((acc: Record<string, string>, s) => {
             acc[s.id] = TYPE_TO_MODULE[s.type]; return acc;
           }, {})).find((sid) =>
             internalConfig.services.find((s) => s.id === sid && TYPE_TO_MODULE[s.type] === req)
@@ -72,7 +73,7 @@ export async function runPipeline(rawConfig, outputDir) {
   resetVFS();
 
   for (const serviceId of executionOrder) {
-    const mod = MODULE_REGISTRY[ir.services.find(s => s.id === serviceId).moduleId];
+    const mod = MODULE_REGISTRY[ir.services.find(s => s.id === serviceId)!.moduleId];
     if (mod.slots) {
       for (const slot of Object.values(mod.slots)) {
         registerSlot(slot);
@@ -81,7 +82,7 @@ export async function runPipeline(rawConfig, outputDir) {
   }
 
   for (const serviceId of executionOrder) {
-    const mod = MODULE_REGISTRY[ir.services.find(s => s.id === serviceId).moduleId];
+    const mod = MODULE_REGISTRY[ir.services.find(s => s.id === serviceId)!.moduleId];
     if (mod.hooks) {
       for (const hook of mod.hooks) {
         registerHook(hook);
@@ -90,25 +91,30 @@ export async function runPipeline(rawConfig, outputDir) {
   }
 
   for (const serviceId of executionOrder) {
-    const irSvc = ir.services.find((s) => s.id === serviceId);
+    const irSvc = ir.services.find((s) => s.id === serviceId)!;
     const mod = MODULE_REGISTRY[irSvc.moduleId];
     console.log(`  ⚙️  Executing ${mod.id}...`);
     if (mod.bootstrap) {
-      await mod.bootstrap({ ...rawConfig, project: ir.project, options: irSvc.config?.options || {} }, resolveSlot);
+      const bootstrapConfig: ModuleBootstrapConfig = {
+        ...rawConfig,
+        project: ir.project,
+        options: (irSvc.config?.options as Record<string, unknown>) || {},
+      };
+      await mod.bootstrap(bootstrapConfig, resolveSlot);
     }
   }
 
-  const collectedDeps = {};
-  const collectedEnvVars = [];
-  
+  const collectedDeps: Record<string, string> = {};
+  const collectedEnvVars: string[] = [];
+
   for (const serviceId of executionOrder) {
-    const irSvc = ir.services.find((s) => s.id === serviceId);
+    const irSvc = ir.services.find((s) => s.id === serviceId)!;
     const mod = MODULE_REGISTRY[irSvc.moduleId];
-    
+
     if (mod.dependencies) {
       Object.assign(collectedDeps, mod.dependencies);
     }
-    
+
     if (mod.envVars) {
       collectedEnvVars.push(mod.envVars);
     }
@@ -125,7 +131,7 @@ export async function runPipeline(rawConfig, outputDir) {
     dependencies: collectedDeps,
   };
   addFile('package.json', JSON.stringify(packageJson, null, 2));
-  
+
   const envTemplateContent = `# Generated by BackForge\n\n` + collectedEnvVars.join('\n\n') + '\n';
   addFile('.env.template', envTemplateContent);
   addFile('README.md', `# ${ir.project.name}
@@ -135,7 +141,7 @@ Generated by **BackForge** — Deterministic Backend Composition Engine.
 ## Structure
 Professional Express.js boilerplate with:
 - \`asyncHandler\` for clean controllers
-- \`ApiError\` & \`ApiResponse\` for standardized communication
+- \`ApiError\` \& \`ApiResponse\` for standardized communication
 - JWT Auth (Access/Refresh Tokens)
 - Mongoose DB Connection
 
