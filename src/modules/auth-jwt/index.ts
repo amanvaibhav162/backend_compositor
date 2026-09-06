@@ -3,7 +3,7 @@ import type { Hook, ModuleBootstrapConfig } from '../../engine/types.js';
 
 export const id = 'auth:jwt';
 export const provides: string[] = ['auth:jwt'];
-export const requires: string[] = ['db:mongodb'];
+export const requires: string[] = ['core:express', 'db:mongodb'];
 export const dependencies: Record<string, string> = {
   'jsonwebtoken': '^9.0.2',
   'bcryptjs': '^3.0.2',
@@ -54,9 +54,20 @@ const userSchema = new Schema(
             lowercase: true,
             trim: true,
         },
+        username: {
+            type: String,
+            trim: true,
+        },
         password: {
             type: String,
-            required: [true, 'Password is required'],
+            required: function () {
+                return !this.googleId;
+            },
+        },
+        googleId: {
+            type: String,
+            unique: true,
+            sparse: true,
         },
         role: {
             type: String,
@@ -73,12 +84,13 @@ const userSchema = new Schema(
 );
 
 userSchema.pre("save", async function (next) {
-    if (!this.isModified("password")) return next();
+    if (!this.isModified("password") || !this.password) return next();
     this.password = await bcrypt.hash(this.password, 10);
     next();
 });
 
 userSchema.methods.isPasswordCorrect = async function (password) {
+    if (!this.password) return false;
     return await bcrypt.compare(password, this.password);
 };
 

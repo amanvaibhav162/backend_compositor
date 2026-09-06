@@ -1,5 +1,5 @@
 import type { z } from 'zod';
-import type { BackForgeConfigSchema, ServiceConfigSchema } from './config.ts';
+import type { BackForgeConfigSchema, ServiceConfigSchema } from './config.js';
 
 export type ServiceConfig = z.infer<typeof ServiceConfigSchema>;
 export type BackForgeConfig = z.infer<typeof BackForgeConfigSchema>;

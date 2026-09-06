@@ -54,13 +54,15 @@ export async function runPipeline(rawConfig: Record<string, unknown>, outputDir:
         id: svc.id,
         type: svc.type,
         moduleId,
-        dependsOn: mod.requires.map((req) =>
-          Object.keys(internalConfig.services.reduce((acc: Record<string, string>, s) => {
-            acc[s.id] = TYPE_TO_MODULE[s.type]; return acc;
-          }, {})).find((sid) =>
-            internalConfig.services.find((s) => s.id === sid && TYPE_TO_MODULE[s.type] === req)
-          ) ?? req
-        ),
+        dependsOn: mod.requires.map((req) => {
+          const matchingSvc = internalConfig.services.find(
+            (s) => (TYPE_TO_MODULE[s.type] ?? s.type) === req
+          );
+          if (!matchingSvc) {
+            throw new Error(`Dependency Error: Service "${svc.id}" (${svc.type}) requires "${req}", but no configured service provides it.`);
+          }
+          return matchingSvc.id;
+        }),
         config: svc,
       };
     }),

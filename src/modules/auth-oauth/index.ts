@@ -3,13 +3,14 @@ import type { Hook, ModuleBootstrapConfig } from '../../engine/types.js';
 
 export const id = 'auth:oauth';
 export const provides: string[] = ['auth:oauth'];
-export const requires: string[] = ['db:mongodb', 'core:express'];
+export const requires: string[] = ['core:express', 'db:mongodb', 'auth:jwt'];
 export const dependencies: Record<string, string> = {
   'passport': '^0.7.0',
   'passport-google-oauth20': '^2.0.0',
 };
 export const envVars = `GOOGLE_CLIENT_ID=your_google_client_id
-GOOGLE_CLIENT_SECRET=your_google_client_secret`;
+GOOGLE_CLIENT_SECRET=your_google_client_secret
+CLIENT_URL=http://localhost:3000`;
 
 export const hooks: Hook[] = [
   {
@@ -65,8 +66,8 @@ passport.use(new GoogleStrategy({
         if (!user) {
             user = await User.create({
                 googleId: profile.id,
-                email: profile.emails[0].value,
-                username: profile.displayName,
+                email: profile.emails?.[0]?.value,
+                username: profile.displayName || profile.emails?.[0]?.value?.split('@')[0],
             });
         }
         return cb(null, user);
@@ -99,11 +100,32 @@ router.get('/google',
   passport.authenticate('google', { scope: ['profile', 'email'] }));
 
 router.get('/google/callback', 
-  passport.authenticate('google', { failureRedirect: '/login' }),
-  function(req, res) {
-    res.redirect('/');
+  passport.authenticate('google', { failureRedirect: '/login', session: false }),
+  async function(req, res) {
+    try {
+      const user = req.user;
+      const accessToken = user.generateAccessToken();
+      const refreshToken = user.generateRefreshToken();
+
+      user.refreshToken = refreshToken;
+      await user.save({ validateBeforeSave: false });
+
+      const cookieOptions = {
+        httpOnly: true,
+        secure: process.env.NODE_ENV === "production",
+        sameSite: "lax"
+      };
+
+      return res
+        .cookie("accessToken", accessToken, cookieOptions)
+        .cookie("refreshToken", refreshToken, cookieOptions)
+        .redirect(process.env.CLIENT_URL || '/');
+    } catch (err) {
+      return res.redirect('/login?error=oauth_failed');
+    }
   });
 
 export default router;
 `);
 }
+

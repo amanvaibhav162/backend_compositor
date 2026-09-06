@@ -34,6 +34,10 @@ export const slots: Record<string, Slot> = {
     name: 'express:index:start',
     description: 'Inject logic before server start in index.js',
   },
+  'express:app:error': {
+    name: 'express:app:error',
+    description: 'Inject error handling middleware into app.js',
+  },
 };
 
 export async function bootstrap(config: ModuleBootstrapConfig, resolveSlot?: SlotResolver): Promise<void> {
@@ -42,6 +46,7 @@ export async function bootstrap(config: ModuleBootstrapConfig, resolveSlot?: Slo
   const appImports = await resolveSlot('express:app:imports', config);
   const appMiddleware = await resolveSlot('express:app:middleware', config);
   const appRoutes = await resolveSlot('express:app:routes', config);
+  const appErrors = await resolveSlot('express:app:error', config);
 
   const indexImports = await resolveSlot('express:index:imports', config);
   const indexStart = await resolveSlot('express:index:start', config);
@@ -94,13 +99,38 @@ export { ApiError };
 export { ApiResponse };
 `);
 
+  addFile('src/middlewares/error.middleware.js', `import { ApiError } from '../utils/ApiError.js';
+
+export const errorHandler = (err, req, res, next) => {
+    let error = err;
+
+    if (!(error instanceof ApiError)) {
+        const statusCode = error.statusCode || 500;
+        const message = error.message || "Something went wrong";
+        error = new ApiError(statusCode, message, error?.errors || [], err.stack);
+    }
+
+    const response = {
+        statusCode: error.statusCode,
+        message: error.message,
+        success: false,
+        errors: error.errors,
+        ...(process.env.NODE_ENV === "development" ? { stack: error.stack } : {})
+    };
+
+    return res.status(error.statusCode).json(response);
+};
+`);
+
   const appImportsContent = appImports.flatMap((f: HookResult) => f.imports || []).join('\n');
   const appMiddlewareContent = appMiddleware.map((f: HookResult) => f.content).join('\n');
   const appRoutesContent = appRoutes.map((f: HookResult) => f.content).join('\n');
+  const appErrorsContent = appErrors.map((f: HookResult) => f.content).join('\n');
 
   addFile('src/app.js', `import express from 'express';
 import cors from 'cors';
 import cookieParser from 'cookie-parser';
+import { errorHandler } from './middlewares/error.middleware.js';
 
 ${appImportsContent}
 
@@ -123,6 +153,21 @@ ${appRoutesContent}
 app.get('/health', (req, res) => {
     res.status(200).json({ status: 'OK' });
 });
+
+// 404 Handler
+app.use((req, res, next) => {
+    res.status(404).json({
+        statusCode: 404,
+        message: \`Cannot \${req.method} \${req.originalUrl} - Not Found\`,
+        success: false,
+        errors: []
+    });
+});
+
+${appErrorsContent}
+
+// Global Error Handler
+app.use(errorHandler);
 
 export { app };
 `);
