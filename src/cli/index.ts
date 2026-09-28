@@ -5,13 +5,28 @@ import path from 'path';
 import os from 'os';
 import { spawnSync } from 'child_process';
 import { parse } from 'yaml';
-import inquirer from 'inquirer';
-import { runPipeline } from '../engine/pipeline.js';
-import { flushToDisk } from '../engine/emitter.js';
+import {
+  intro,
+  outro,
+  text,
+  select,
+  confirm,
+  spinner,
+  note,
+  isCancel,
+  cancel,
+  log,
+} from '@clack/prompts';
+import pc from 'picocolors';
 
-const pkg = JSON.parse(fs.readFileSync(new URL('../../package.json', import.meta.url), 'utf-8')) as {
-  version: string;
-};
+import { runPipeline, buildIR } from '../engine/pipeline.js';
+import { flushToDisk } from '../engine/emitter.js';
+import { detectPackageManager, installDependencies, initializeGit } from './pm.js';
+import { generateJsonSchema, writeJsonSchema } from './schemaGenerator.js';
+
+const pkg = JSON.parse(
+  fs.readFileSync(new URL('../../package.json', import.meta.url), 'utf-8')
+) as { version: string };
 
 const program = new Command();
 
@@ -20,199 +35,424 @@ program
   .description('🔨 Deterministic Backend Composition Engine')
   .version(pkg.version);
 
+// ==========================================
+// Command: init
+// ==========================================
 program
   .command('init')
-  .description('Create a starter backend.yaml in the current directory')
-  .option('-i, --interactive', 'Interactive configuration')
-  .action(async (options: { interactive?: boolean }) => {
-    const target = path.join(process.cwd(), 'backend.yaml');
-    if (fs.existsSync(target)) {
-      console.error('❌  backend.yaml already exists. Remove it first.');
-      process.exit(1);
+  .description('Scaffold a starter backend.yaml with IDE schema autocompletion')
+  .option('-i, --interactive', 'Run interactive setup wizard')
+  .option('-f, --force', 'Overwrite existing backend.yaml and schema.json')
+  .action(async (options: { interactive?: boolean; force?: boolean }) => {
+    const cwd = process.cwd();
+    const yamlPath = path.join(cwd, 'backend.yaml');
+    const schemaPath = path.join(cwd, 'schema.json');
+
+    if (fs.existsSync(yamlPath) && !options.force) {
+      if (options.interactive) {
+        intro(pc.bgCyan(pc.black(' 🔨 BackForge Project Initializer ')));
+        const shouldOverwrite = await confirm({
+          message: `${pc.yellow('backend.yaml')} already exists. Overwrite?`,
+          initialValue: false,
+        });
+
+        if (isCancel(shouldOverwrite) || !shouldOverwrite) {
+          cancel('Initialization aborted.');
+          process.exit(0);
+        }
+      } else {
+        console.error(pc.red('❌  backend.yaml already exists. Use --force to overwrite.'));
+        process.exit(1);
+      }
     }
 
-    let template = "";
+    let projectName = 'my-backend';
+    let database = 'mongodb';
+    let useJwt = true;
+    let useRbac = false;
+    let useOauth = false;
 
     if (options.interactive) {
-      console.log('✨ Welcome to BackForge Interactive Init ✨\n');
-      
-      const answers = await inquirer.prompt([
-        {
-          type: 'input',
-          name: 'projectName',
-          message: 'Project name:',
-          default: 'my-backend'
-        },
-        {
-          type: 'list',
-          name: 'database',
-          message: 'Which database do you want to use?',
-          choices: [
-            { name: 'MongoDB', value: 'mongodb' },
-            { name: 'None', value: 'none' }
-          ]
-        },
-        {
-          type: 'confirm',
-          name: 'useJwt',
-          message: 'Include JWT Auth?',
-          default: true,
-          when: (answers: Record<string, unknown>) => answers.database !== 'none'
-        },
-        {
-          type: 'confirm',
-          name: 'useRbac',
-          message: 'Enable RBAC (Role Based Access Control)?',
-          default: false,
-          when: (answers: Record<string, unknown>) => answers.useJwt as boolean
-        },
-        {
-          type: 'confirm',
-          name: 'useOauth',
-          message: 'Include Google OAuth?',
-          default: false,
-          when: (answers: Record<string, unknown>) => answers.database !== 'none'
-        }
-      ]) as {
-        projectName: string;
-        database: string;
-        useJwt?: boolean;
-        useRbac?: boolean;
-        useOauth?: boolean;
-      };
+      intro(pc.bgCyan(pc.black(' 🔨 BackForge Project Initializer ')));
 
-      const { projectName, database, useJwt, useRbac, useOauth } = answers;
+      const namePrompt = await text({
+        message: 'Project name:',
+        placeholder: 'my-backend',
+        defaultValue: 'my-backend',
+        validate: (val) => {
+          if (!val || !val.trim()) return 'Project name cannot be empty';
+        },
+      });
 
-      template += `project:\n  name: "${projectName}"\n\nservices:\n`;
-      template += `  - id: "express"\n    type: "express"\n\n`;
-      
+      if (isCancel(namePrompt)) {
+        cancel('Initialization cancelled.');
+        process.exit(0);
+      }
+      projectName = namePrompt.trim();
+
+      const dbPrompt = await select({
+        message: 'Select database engine:',
+        options: [
+          { value: 'mongodb', label: 'MongoDB', hint: 'Mongoose ORM with connection pooling' },
+          { value: 'none', label: 'None (Stateless)', hint: 'Pure HTTP API without persistent store' },
+        ],
+      });
+
+      if (isCancel(dbPrompt)) {
+        cancel('Initialization cancelled.');
+        process.exit(0);
+      }
+      database = dbPrompt;
+
       if (database !== 'none') {
-        template += `  - id: "database"\n    type: "${database}"\n\n`;
-      }
-      if (useJwt) {
-        template += `  - id: "auth"\n    type: "jwt"\n`;
-        if (useRbac) {
-          template += `    options:\n      rbac: true\n`;
+        const jwtPrompt = await select({
+          message: 'Configure authentication:',
+          options: [
+            { value: 'jwt', label: 'JWT Authentication', hint: 'Access & Refresh tokens with bcrypt' },
+            { value: 'none', label: 'No Authentication', hint: 'Public API endpoints only' },
+          ],
+        });
+
+        if (isCancel(jwtPrompt)) {
+          cancel('Initialization cancelled.');
+          process.exit(0);
         }
-        template += `\n`;
+        useJwt = jwtPrompt === 'jwt';
+
+        if (useJwt) {
+          const rbacPrompt = await confirm({
+            message: 'Enable Role-Based Access Control (RBAC)?',
+            initialValue: false,
+          });
+
+          if (isCancel(rbacPrompt)) {
+            cancel('Initialization cancelled.');
+            process.exit(0);
+          }
+          useRbac = rbacPrompt;
+        }
+
+        const oauthPrompt = await confirm({
+          message: 'Include Google OAuth (Passport.js)?',
+          initialValue: false,
+        });
+
+        if (isCancel(oauthPrompt)) {
+          cancel('Initialization cancelled.');
+          process.exit(0);
+        }
+        useOauth = oauthPrompt;
+      } else {
+        useJwt = false;
       }
-      if (useOauth) {
-        template += `  - id: "oauth"\n    type: "oauth"\n\n`;
-      }
-    } else {
-      template = `project:
-  name: "my-backend"
+    }
+
+    // Write schema.json for IDE autocompletion
+    writeJsonSchema(schemaPath);
+
+    // Build YAML template
+    let yamlContent = `# yaml-language-server: $schema=./schema.json
+# Generated by BackForge v${pkg.version}
+
+project:
+  name: "${projectName}"
 
 services:
   - id: "express"
     type: "express"
+`;
 
+    if (database !== 'none') {
+      yamlContent += `
   - id: "database"
-    type: "mongodb"
-
-  - id: "auth"
-    type: "jwt"
+    type: "${database}"
 `;
     }
 
-    fs.writeFileSync(target, template, 'utf-8');
-    console.log('✅  Created backend.yaml');
-    console.log('   Edit it, then run: backforge generate');
+    if (useJwt) {
+      yamlContent += `
+  - id: "auth"
+    type: "jwt"
+`;
+      if (useRbac) {
+        yamlContent += `    options:
+      rbac: true
+`;
+      }
+    }
+
+    if (useOauth) {
+      yamlContent += `
+  - id: "oauth"
+    type: "oauth"
+`;
+    }
+
+    fs.writeFileSync(yamlPath, yamlContent, 'utf-8');
+
+    if (options.interactive) {
+      log.success(pc.green('Created backend.yaml with schema autocompletion enabled.'));
+      log.success(pc.green('Created schema.json for VS Code / YAML language server.'));
+
+      note(
+        `1. Edit ${pc.cyan('backend.yaml')} to customize your services\n` +
+        `2. Generate your backend:\n   ${pc.bold(pc.cyan('backforge generate'))}`,
+        'Next Steps'
+      );
+
+      outro(pc.green('✨ Project initialized successfully!'));
+    } else {
+      console.log(pc.green('✅  Created backend.yaml and schema.json'));
+      console.log('   Edit it, then run: ' + pc.cyan('backforge generate'));
+    }
   });
 
+// ==========================================
+// Command: generate
+// ==========================================
 program
   .command('generate')
-  .description('Generate backend from a YAML config file')
-  .argument('[file]', 'Path to your YAML config', 'backend.yaml')
+  .description('Compile a YAML configuration into a runnable backend project')
+  .argument('[file]', 'Path to YAML configuration', 'backend.yaml')
   .option('-o, --out <dir>', 'Output directory', './output')
-  .option('-d, --dry-run', 'Preview generated files without writing to disk')
-  .action(async (file: string, opts: { out: string; dryRun?: boolean }) => {
+  .option('-d, --dry-run', 'Preview generated files without touching disk')
+  .option('-y, --yes', 'Skip interactive confirmations and write to disk directly')
+  .option('--install', 'Automatically install project dependencies after generation')
+  .option('--git', 'Automatically initialize git repository after generation')
+  .action(async (file: string, opts: {
+    out: string;
+    dryRun?: boolean;
+    yes?: boolean;
+    install?: boolean;
+    git?: boolean;
+  }) => {
     const yamlPath = path.resolve(process.cwd(), file);
+    const outDir = path.resolve(process.cwd(), opts.out);
 
     if (!fs.existsSync(yamlPath)) {
-      console.error(`❌  Config file not found: ${yamlPath}`);
-      console.error('   Run "backforge init" to create one.');
+      console.error(pc.red(`❌  Config file not found: ${yamlPath}`));
+      console.error(pc.yellow('   Run "backforge init" to create one.'));
       process.exit(1);
     }
 
-    console.log(`\n🔨 BackForge — Compiling ${file}...\n`);
+    intro(pc.bgCyan(pc.black(' 🔨 BackForge Backend Compositor ')));
+
+    const compileSpinner = spinner();
+    compileSpinner.start(`Compiling ${pc.cyan(file)}...`);
 
     let rawConfig: Record<string, unknown>;
     try {
       rawConfig = parse(fs.readFileSync(yamlPath, 'utf-8')) as Record<string, unknown>;
     } catch (err) {
-      console.error(`❌  Failed to parse YAML: ${(err as Error).message}`);
+      compileSpinner.stop(pc.red('Failed to parse YAML file.'));
+      console.error(pc.red(`   ${(err as Error).message}`));
       process.exit(1);
       return;
     }
 
+    let vfs: Map<string, string>;
     try {
-      const vfs = await runPipeline(rawConfig, path.resolve(process.cwd(), opts.out));
-      
-      if (opts.dryRun) {
-        console.log('\n🔍 [DRY RUN] Previewing generated files:\n');
-        for (const [filePath, content] of vfs.entries()) {
-          console.log(`\n📄 ${filePath}\n${'-'.repeat(40)}\n${content}\n${'-'.repeat(40)}`);
-        }
-        return;
-      }
-      
-      let editing = true;
-      while (editing) {
-        const { action } = await inquirer.prompt([
-          {
-            type: 'list',
-            name: 'action',
-            message: 'Generated files are ready in memory. What would you like to do?',
-            choices: [
-              { name: '✅ Save to disk', value: 'save' },
-              { name: '📝 Edit a file', value: 'edit' },
-              { name: '❌ Cancel generation', value: 'cancel' }
-            ]
-          }
-        ]) as { action: string };
-        
-        if (action === 'save') {
-          editing = false;
-        } else if (action === 'cancel') {
-          console.log('Generation cancelled.');
-          process.exit(0);
-        } else if (action === 'edit') {
-          const { fileToEdit } = await inquirer.prompt([
-            {
-              type: 'list',
-              name: 'fileToEdit',
-              message: 'Which file do you want to edit?',
-              choices: Array.from(vfs.keys()),
-              pageSize: 15
-            }
-          ]) as { fileToEdit: string };
-          
-          const tempFile = path.join(os.tmpdir(), `backforge-${Date.now()}-${path.basename(fileToEdit)}`);
-          fs.writeFileSync(tempFile, vfs.get(fileToEdit)!);
-          
-          const editor = process.env.EDITOR || 'nano';
-          spawnSync(editor, [tempFile], { stdio: 'inherit' });
-          
-          const newContent = fs.readFileSync(tempFile, 'utf-8');
-          vfs.set(fileToEdit, newContent);
-          fs.unlinkSync(tempFile);
-          
-          console.log(`\n✅ Updated ${fileToEdit} in memory.\n`);
-        }
-      }
-
-      flushToDisk(path.resolve(process.cwd(), opts.out));
-
-      console.log(`\n✅  Backend generated successfully → ${opts.out}/`);
-      console.log('   Next steps:');
-      console.log(`     cd ${opts.out}`);
-      console.log('     cp .env.template .env');
-      console.log('     npm install && npm start\n');
-      
+      vfs = await runPipeline(rawConfig, outDir);
+      compileSpinner.stop(pc.green(`Compilation complete! ${pc.bold(vfs.size.toString())} files staged in memory.`));
     } catch (err) {
-      console.error(`\n❌  Compilation failed:\n   ${(err as Error).message}\n`);
+      compileSpinner.stop(pc.red('Compilation failed.'));
+      console.error(pc.red(`\n❌  ${(err as Error).message}\n`));
       process.exit(1);
+      return;
+    }
+
+    // Dry Run Mode
+    if (opts.dryRun) {
+      log.info(pc.bold(pc.yellow('🔍 [DRY RUN] Previewing generated files:')));
+      for (const [filePath, content] of vfs.entries()) {
+        const preview = content.length > 500
+          ? content.substring(0, 500) + `\n\n... [truncated ${content.length - 500} bytes] ...`
+          : content;
+        note(preview, `📄 ${filePath}`);
+      }
+
+      outro(pc.cyan(`Dry run complete. Staged ${vfs.size} files in memory. Nothing written to disk.`));
+      return;
+    }
+
+    // Interactive inspection & editing loop
+    if (!opts.yes) {
+      let inspecting = true;
+      while (inspecting) {
+        const action = await select({
+          message: 'Generated files are staged in memory. What would you like to do?',
+          options: [
+            { value: 'save', label: '✅ Save to disk', hint: `Write all files to ${opts.out}/` },
+            { value: 'preview', label: '🔍 Preview files', hint: 'View staged file list or inspect contents' },
+            { value: 'edit', label: '📝 Edit a file', hint: 'Modify a staged file in your $EDITOR before saving' },
+            { value: 'cancel', label: '❌ Cancel generation', hint: 'Abort without writing anything' },
+          ],
+        });
+
+        if (isCancel(action) || action === 'cancel') {
+          cancel('Generation cancelled. No files written to disk.');
+          process.exit(0);
+        }
+
+        if (action === 'save') {
+          inspecting = false;
+        } else if (action === 'preview') {
+          const fileChoice = await select({
+            message: 'Select a file to inspect:',
+            options: [
+              ...Array.from(vfs.keys()).map((f) => ({ value: f, label: f })),
+              { value: '__back__', label: '← Back to menu' },
+            ],
+          });
+
+          if (!isCancel(fileChoice) && fileChoice !== '__back__') {
+            const content = vfs.get(fileChoice as string) || '';
+            note(content, `📄 ${fileChoice}`);
+          }
+        } else if (action === 'edit') {
+          const fileToEdit = await select({
+            message: 'Select a file to edit in your editor:',
+            options: Array.from(vfs.keys()).map((f) => ({ value: f, label: f })),
+          });
+
+          if (!isCancel(fileToEdit)) {
+            const tempFile = path.join(
+              os.tmpdir(),
+              `backforge-${Date.now()}-${path.basename(fileToEdit as string)}`
+            );
+            fs.writeFileSync(tempFile, vfs.get(fileToEdit as string)!);
+
+            const editor = process.env.VISUAL || process.env.EDITOR || 'nano';
+            spawnSync(editor, [tempFile], { stdio: 'inherit' });
+
+            const newContent = fs.readFileSync(tempFile, 'utf-8');
+            vfs.set(fileToEdit as string, newContent);
+            fs.unlinkSync(tempFile);
+
+            log.success(pc.green(`Updated ${fileToEdit} in memory.`));
+          }
+        }
+      }
+    }
+
+    // Flush to disk
+    const flushSpinner = spinner();
+    flushSpinner.start(`Writing files to ${pc.cyan(opts.out)}...`);
+    flushToDisk(outDir);
+    flushSpinner.stop(pc.green(`Emitted ${vfs.size} files into ${pc.bold(opts.out)}/`));
+
+    // Post-generation steps: Dependencies & Git
+    const pm = detectPackageManager();
+    let installedDeps = false;
+
+    if (opts.install) {
+      const instSpinner = spinner();
+      instSpinner.start(`Installing dependencies with ${pc.cyan(pm)}...`);
+      installedDeps = await installDependencies(outDir, pm);
+      if (installedDeps) {
+        instSpinner.stop(pc.green(`Dependencies installed successfully with ${pm}!`));
+      } else {
+        instSpinner.stop(pc.yellow(`Failed to install dependencies with ${pm}.`));
+      }
+    } else if (!opts.yes) {
+      const shouldInstall = await confirm({
+        message: `Install dependencies now with ${pc.cyan(pm)}?`,
+        initialValue: true,
+      });
+
+      if (!isCancel(shouldInstall) && shouldInstall) {
+        log.step(`Running ${pc.cyan(`${pm} install`)}...`);
+        installedDeps = await installDependencies(outDir, pm);
+        if (installedDeps) {
+          log.success(pc.green(`Dependencies installed successfully!`));
+        } else {
+          log.warn(pc.yellow(`Installation encountered an error. Run manually: cd ${opts.out} && ${pm} install`));
+        }
+      }
+    }
+
+    if (opts.git) {
+      const gitSuccess = initializeGit(outDir);
+      if (gitSuccess) log.success(pc.green('Git repository initialized.'));
+    } else if (!opts.yes) {
+      const shouldGit = await confirm({
+        message: 'Initialize a Git repository?',
+        initialValue: true,
+      });
+
+      if (!isCancel(shouldGit) && shouldGit) {
+        const gitSuccess = initializeGit(outDir);
+        if (gitSuccess) {
+          log.success(pc.green('Git repository initialized.'));
+        }
+      }
+    }
+
+    // Next steps summary
+    const runCmd = `${pm === 'npm' ? 'npm run' : pm} dev`;
+    const installCmd = installedDeps ? '' : `${pm} install\n     `;
+
+    note(
+      `cd ${opts.out}\n     ${installCmd}${runCmd}`,
+      '🚀 Launch your backend'
+    );
+
+    outro(pc.green('✨ Generation complete! Happy composing!'));
+  });
+
+// ==========================================
+// Command: validate
+// ==========================================
+program
+  .command('validate')
+  .description('Validate a YAML configuration file without generating code')
+  .argument('[file]', 'Path to YAML configuration', 'backend.yaml')
+  .action((file: string) => {
+    const yamlPath = path.resolve(process.cwd(), file);
+
+    if (!fs.existsSync(yamlPath)) {
+      console.error(pc.red(`❌  Config file not found: ${yamlPath}`));
+      process.exit(1);
+    }
+
+    intro(pc.bgCyan(pc.black(' 🔨 BackForge Config Validator ')));
+
+    try {
+      const rawConfig = parse(fs.readFileSync(yamlPath, 'utf-8')) as Record<string, unknown>;
+      const { ir, executionOrder } = buildIR(rawConfig);
+
+      log.success(pc.green('YAML syntax: Valid'));
+      log.success(pc.green('Schema validation: Passed'));
+      log.success(pc.green('Semantic dependencies: Satisfied'));
+      log.success(pc.green(`Resolved DAG order: ${pc.cyan(executionOrder.join(' → '))}`));
+
+      note(
+        `Project: ${pc.bold(ir.project.name)}\nServices: ${ir.services.map((s) => `${s.id} (${s.type})`).join(', ')}`,
+        'Config Summary'
+      );
+
+      outro(pc.green('✓ Configuration is valid and ready for compilation!'));
+    } catch (err) {
+      log.error(pc.red('Validation Failed:'));
+      console.error(pc.red(`   ${(err as Error).message}\n`));
+      process.exit(1);
+    }
+  });
+
+// ==========================================
+// Command: schema
+// ==========================================
+program
+  .command('schema')
+  .description('Output or export the JSON Schema for BackForge configurations')
+  .argument('[out]', 'Path to write schema.json (prints to stdout if omitted)')
+  .action((out?: string) => {
+    if (out) {
+      const resolved = writeJsonSchema(out);
+      console.log(pc.green(`✅  JSON Schema written to ${resolved}`));
+    } else {
+      const schema = generateJsonSchema();
+      console.log(JSON.stringify(schema, null, 2));
     }
   });
 

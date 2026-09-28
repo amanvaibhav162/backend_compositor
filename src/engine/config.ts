@@ -2,19 +2,19 @@ import { z } from 'zod';
 import type { BackForgeConfig } from './types.js';
 
 export const ServiceConfigSchema = z.object({
-  id: z.string().min(1, 'Service id cannot be empty'),
-  type: z.string().min(1, 'Service type cannot be empty'),
-  options: z.record(z.string(), z.any()).optional().default({}),
-}).passthrough();
+  id: z.string().min(1, 'Service id cannot be empty').describe('Unique identifier for this service instance (e.g. "express", "database", "auth")'),
+  type: z.string().min(1, 'Service type cannot be empty').describe('Module type to load: "express", "mongodb", "jwt", or "oauth"'),
+  options: z.record(z.string(), z.any()).optional().default({}).describe('Module-specific configuration options (e.g. { rbac: true } for jwt)'),
+}).passthrough().describe('Configured backend service definition');
 
 const ProjectConfigSchema = z.object({
-  name: z.string().min(1, 'Project name cannot be empty'),
-});
+  name: z.string().min(1, 'Project name cannot be empty').describe('Name of the backend project and primary package identifier'),
+}).describe('Project metadata and global settings');
 
 export const BackForgeConfigSchema = z.object({
   project: ProjectConfigSchema,
-  services: z.array(ServiceConfigSchema).min(1, 'At least one service is required'),
-});
+  services: z.array(ServiceConfigSchema).min(1, 'At least one service is required').describe('List of backend services to compose'),
+}).describe('BackForge declarative backend configuration');
 
 export const SERVICE_TYPE_REQUIREMENTS: Record<string, { requires: string[]; description: string }> = {
   mongodb: { requires: ['express'], description: 'an Express server (type: "express")' },

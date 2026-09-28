@@ -17,8 +17,9 @@
   "author": "",
   "license": "ISC",
   "dependencies": {
+    "@clack/prompts": "^1.8.1",
     "commander": "^14.0.3",
-    "inquirer": "^9.2.16",
+    "picocolors": "^1.1.1",
     "yaml": "^2.8.4",
     "zod": "^4.4.3"
   },

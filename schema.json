@@ -1,0 +1,63 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "project": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Name of the backend project and primary package identifier"
+        }
+      },
+      "required": [
+        "name"
+      ],
+      "additionalProperties": false,
+      "description": "Project metadata and global settings"
+    },
+    "services": {
+      "minItems": 1,
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Unique identifier for this service instance (e.g. \"express\", \"database\", \"auth\")"
+          },
+          "type": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Module type to load: \"express\", \"mongodb\", \"jwt\", or \"oauth\""
+          },
+          "options": {
+            "default": {},
+            "description": "Module-specific configuration options (e.g. { rbac: true } for jwt)",
+            "type": "object",
+            "propertyNames": {
+              "type": "string"
+            },
+            "additionalProperties": {}
+          }
+        },
+        "required": [
+          "id",
+          "type",
+          "options"
+        ],
+        "additionalProperties": {},
+        "description": "Configured backend service definition"
+      },
+      "description": "List of backend services to compose"
+    }
+  },
+  "required": [
+    "project",
+    "services"
+  ],
+  "additionalProperties": false,
+  "description": "BackForge declarative backend configuration"
+}
