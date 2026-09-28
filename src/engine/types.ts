@@ -28,6 +28,7 @@ export interface ModuleDefinition {
   provides: string[];
   requires: string[];
   dependencies: Record<string, string>;
+  devDependencies?: Record<string, string>;
   envVars: string;
   slots?: Record<string, Slot>;
   hooks?: Hook[];

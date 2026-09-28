@@ -4,9 +4,11 @@ import type { Hook, ModuleBootstrapConfig } from '../../engine/types.js';
 export const id = 'db:mongodb';
 export const provides: string[] = ['db:mongodb'];
 export const requires: string[] = ['core:express'];
+
 export const dependencies: Record<string, string> = {
   'mongoose': '^8.13.2',
 };
+
 export const envVars = `MONGODB_URI=mongodb://localhost:27017`;
 
 export const hooks: Hook[] = [
@@ -37,19 +39,20 @@ export async function bootstrap(_config: ModuleBootstrapConfig): Promise<void> {
   const connectionContent = `import mongoose from 'mongoose';
 import { DB_NAME } from '../constants.js';
 
-const connectDB = async () => {
-    try {
-        const connectionInstance = await mongoose.connect(process.env.MONGODB_URI, {
-            dbName: DB_NAME,
-        });
-        console.log(\`✅ MongoDB connected !! DB HOST: \${connectionInstance.connection.host}\`);
-    } catch (error) {
-        console.log("❌ MONGODB connection FAILED ", error);
-        process.exit(1);
-    }
+const connectDB = async (): Promise<void> => {
+  try {
+    const uri = process.env.MONGODB_URI || 'mongodb://localhost:27017';
+    const connectionInstance = await mongoose.connect(uri, {
+      dbName: DB_NAME,
+    });
+    console.log(\`✅ MongoDB connected !! DB HOST: \${connectionInstance.connection.host}\`);
+  } catch (error) {
+    console.error("❌ MONGODB connection FAILED: ", error);
+    process.exit(1);
+  }
 };
 
 export default connectDB;
 `;
-  addFile('src/db/db.js', connectionContent);
+  addFile('src/db/db.ts', connectionContent);
 }
