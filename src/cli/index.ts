@@ -71,6 +71,7 @@ program
     let useJwt = true;
     let useRbac = false;
     let useOauth = false;
+    let useNix = false;
 
     if (options.interactive) {
       intro(pc.bgCyan(pc.black(' 🔨 BackForge Project Initializer ')));
@@ -145,6 +146,17 @@ program
       } else {
         useJwt = false;
       }
+
+      const nixPrompt = await confirm({
+        message: 'Enable hermetic Nix Flakes / DevShell (flake.nix)?',
+        initialValue: false,
+      });
+
+      if (isCancel(nixPrompt)) {
+        cancel('Initialization cancelled.');
+        process.exit(0);
+      }
+      useNix = nixPrompt;
     }
 
     // Write schema.json for IDE autocompletion
@@ -156,6 +168,7 @@ program
 
 project:
   name: "${projectName}"
+${useNix ? '  nix: true\n' : ''}
 
 services:
   - id: "express"
@@ -219,12 +232,14 @@ program
   .option('-y, --yes', 'Skip interactive confirmations and write to disk directly')
   .option('--install', 'Automatically install project dependencies after generation')
   .option('--git', 'Automatically initialize git repository after generation')
+  .option('--nix', 'Emit hermetic flake.nix and shell.nix for reproducible environments')
   .action(async (file: string, opts: {
     out: string;
     dryRun?: boolean;
     yes?: boolean;
     install?: boolean;
     git?: boolean;
+    nix?: boolean;
   }) => {
     const yamlPath = path.resolve(process.cwd(), file);
     const outDir = path.resolve(process.cwd(), opts.out);
@@ -251,14 +266,37 @@ program
     }
 
     let vfs: Map<string, string>;
+    let pipelineResult: Awaited<ReturnType<typeof runPipeline>>;
     try {
-      vfs = await runPipeline(rawConfig, outDir);
+      pipelineResult = await runPipeline(rawConfig, outDir, { nix: opts.nix });
+      vfs = pipelineResult.vfs;
       compileSpinner.stop(pc.green(`Compilation complete! ${pc.bold(vfs.size.toString())} files staged in memory.`));
     } catch (err) {
       compileSpinner.stop(pc.red('Compilation failed.'));
       console.error(pc.red(`\n❌  ${(err as Error).message}\n`));
       process.exit(1);
       return;
+    }
+
+    log.info(
+      pc.dim(`🖥️  Host Node: v${pipelineResult.hostInventory.nodeVersion} (${pipelineResult.hostInventory.platform}-${pipelineResult.hostInventory.arch})`) +
+      pc.dim(` | Package Manager: ${pipelineResult.hostInventory.packageManager}`) +
+      '\n' +
+      pc.dim(`🔒 Derivation: ${pipelineResult.derivationId}`)
+    );
+
+    if (pipelineResult.hostMatches.length > 0) {
+      log.success(
+        pc.green(`⚡ Adopted ${pipelineResult.hostMatches.length} package(s) from host computer: `) +
+        pipelineResult.hostMatches.map((m) => pc.cyan(`${m.name}@${m.version}`)).join(', ')
+      );
+    }
+
+    if (pipelineResult.registryDownloads.length > 0) {
+      log.step(
+        `📦 Scheduled ${pipelineResult.registryDownloads.length} package(s) for registry download: ` +
+        pipelineResult.registryDownloads.map((r) => pc.yellow(`${r.name}@${r.range}`)).join(', ')
+      );
     }
 
     // Dry Run Mode

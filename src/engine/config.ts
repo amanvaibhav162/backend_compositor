@@ -9,6 +9,7 @@ export const ServiceConfigSchema = z.object({
 
 const ProjectConfigSchema = z.object({
   name: z.string().min(1, 'Project name cannot be empty').describe('Name of the backend project and primary package identifier'),
+  nix: z.boolean().optional().default(false).describe('Generate hermetic Nix flake and shell for reproducible OS/runtime environments'),
 }).describe('Project metadata and global settings');
 
 export const BackForgeConfigSchema = z.object({

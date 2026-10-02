@@ -44,12 +44,12 @@ export interface IRService {
 }
 
 export interface IR {
-  project: { name: string };
+  project: { name: string; nix?: boolean };
   services: IRService[];
 }
 
 export interface ModuleBootstrapConfig {
-  project: { name: string };
+  project: { name: string; nix?: boolean };
   services?: ServiceConfig[];
   options: Record<string, unknown>;
   [key: string]: unknown;
