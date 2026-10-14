@@ -9,10 +9,16 @@
           "type": "string",
           "minLength": 1,
           "description": "Name of the backend project and primary package identifier"
+        },
+        "nix": {
+          "default": false,
+          "description": "Generate hermetic Nix flake and shell for reproducible OS/runtime environments",
+          "type": "boolean"
         }
       },
       "required": [
-        "name"
+        "name",
+        "nix"
       ],
       "additionalProperties": false,
       "description": "Project metadata and global settings"
@@ -31,14 +37,33 @@
           "type": {
             "type": "string",
             "minLength": 1,
-            "description": "Module type to load: \"express\", \"mongodb\", \"jwt\", or \"oauth\""
+            "description": "Module type to load: \"express\", \"mongodb\", \"postgres\", \"jwt\", or \"oauth\""
           },
           "options": {
             "default": {},
-            "description": "Module-specific configuration options (e.g. { rbac: true } for jwt)",
+            "description": "Module-specific configuration options and dependency overrides",
             "type": "object",
-            "propertyNames": {
-              "type": "string"
+            "properties": {
+              "dependencies": {
+                "description": "Custom dependency semver overrides for this service",
+                "type": "object",
+                "propertyNames": {
+                  "type": "string"
+                },
+                "additionalProperties": {
+                  "type": "string"
+                }
+              },
+              "devDependencies": {
+                "description": "Custom devDependency semver overrides for this service",
+                "type": "object",
+                "propertyNames": {
+                  "type": "string"
+                },
+                "additionalProperties": {
+                  "type": "string"
+                }
+              }
             },
             "additionalProperties": {}
           }

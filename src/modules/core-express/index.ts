@@ -1,24 +1,25 @@
 import { addFile } from '../../engine/emitter.js';
 import type { Slot, HookResult, ModuleBootstrapConfig, SlotResolver } from '../../engine/types.js';
+import { buildDependencies } from '../../engine/catalog.js';
 
 export const id = 'core:express';
 export const provides: string[] = ['core:express'];
 export const requires: string[] = [];
 
-export const dependencies: Record<string, string> = {
-  'express': '^4.21.2',
-  'dotenv': '^16.5.0',
-  'cors': '^2.8.5',
-  'cookie-parser': '^1.4.7',
-  'helmet': '^8.0.0',
-  'express-rate-limit': '^7.5.0',
-};
+export const dependencies: Record<string, string> = buildDependencies([
+  'express',
+  'dotenv',
+  'cors',
+  'cookie-parser',
+  'helmet',
+  'express-rate-limit',
+]);
 
-export const devDependencies: Record<string, string> = {
-  '@types/express': '^4.17.21',
-  '@types/cors': '^2.8.17',
-  '@types/cookie-parser': '^1.4.7',
-};
+export const devDependencies: Record<string, string> = buildDependencies([
+  '@types/express',
+  '@types/cors',
+  '@types/cookie-parser',
+]);
 
 export const envVars = `PORT=8000
 CORS_ORIGIN=*`;

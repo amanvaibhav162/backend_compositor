@@ -94,6 +94,7 @@ program
       const dbPrompt = await select({
         message: 'Select database engine:',
         options: [
+          { value: 'postgres', label: 'PostgreSQL', hint: 'Drizzle ORM + connection pool + migrations (Recommended)' },
           { value: 'mongodb', label: 'MongoDB', hint: 'Mongoose ORM with connection pooling' },
           { value: 'none', label: 'None (Stateless)', hint: 'Pure HTTP API without persistent store' },
         ],

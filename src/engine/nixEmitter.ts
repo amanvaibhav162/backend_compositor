@@ -4,6 +4,7 @@ export interface NixEmitterParams {
   projectName: string;
   hostInventory: HostInventory;
   hasMongo: boolean;
+  hasPostgres?: boolean;
 }
 
 export function generateFlakeNix(params: NixEmitterParams): string {
@@ -16,6 +17,9 @@ export function generateFlakeNix(params: NixEmitterParams): string {
   const extraPkgs: string[] = [];
   if (params.hasMongo) {
     extraPkgs.push('mongosh');
+  }
+  if (params.hasPostgres) {
+    extraPkgs.push('postgresql');
   }
 
   if (params.hostInventory.packageManager === 'pnpm') {
@@ -69,6 +73,9 @@ export function generateShellNix(params: NixEmitterParams): string {
   const extraPkgs: string[] = [];
   if (params.hasMongo) {
     extraPkgs.push('mongosh');
+  }
+  if (params.hasPostgres) {
+    extraPkgs.push('postgresql');
   }
 
   if (params.hostInventory.packageManager === 'pnpm') {

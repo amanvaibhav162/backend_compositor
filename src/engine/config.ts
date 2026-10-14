@@ -1,10 +1,14 @@
 import { z } from 'zod';
 import type { BackForgeConfig } from './types.js';
+import { validateVersionOverride } from './catalog.js';
 
 export const ServiceConfigSchema = z.object({
   id: z.string().min(1, 'Service id cannot be empty').describe('Unique identifier for this service instance (e.g. "express", "database", "auth")'),
-  type: z.string().min(1, 'Service type cannot be empty').describe('Module type to load: "express", "mongodb", "jwt", or "oauth"'),
-  options: z.record(z.string(), z.any()).optional().default({}).describe('Module-specific configuration options (e.g. { rbac: true } for jwt)'),
+  type: z.string().min(1, 'Service type cannot be empty').describe('Module type to load: "express", "mongodb", "postgres", "jwt", or "oauth"'),
+  options: z.object({
+    dependencies: z.record(z.string(), z.string()).optional().describe('Custom dependency semver overrides for this service'),
+    devDependencies: z.record(z.string(), z.string()).optional().describe('Custom devDependency semver overrides for this service'),
+  }).passthrough().optional().default({}).describe('Module-specific configuration options and dependency overrides'),
 }).passthrough().describe('Configured backend service definition');
 
 const ProjectConfigSchema = z.object({
@@ -19,8 +23,9 @@ export const BackForgeConfigSchema = z.object({
 
 export const SERVICE_TYPE_REQUIREMENTS: Record<string, { requires: string[]; description: string }> = {
   mongodb: { requires: ['express'], description: 'an Express server (type: "express")' },
-  jwt: { requires: ['express', 'mongodb'], description: 'an Express server (type: "express") and MongoDB (type: "mongodb")' },
-  oauth: { requires: ['express', 'mongodb', 'jwt'], description: 'an Express server, MongoDB, and JWT Auth (type: "jwt")' },
+  postgres: { requires: ['express'], description: 'an Express server (type: "express")' },
+  jwt: { requires: ['express'], description: 'an Express server (type: "express") and a database ("mongodb" or "postgres")' },
+  oauth: { requires: ['express', 'jwt'], description: 'an Express server, database ("mongodb" or "postgres"), and JWT Auth (type: "jwt")' },
 };
 
 export function validateSemantics(
@@ -38,6 +43,7 @@ export function validateSemantics(
   }
 
   const configuredTypes = new Set(config.services.map((s) => s.type));
+  const hasDb = configuredTypes.has('mongodb') || configuredTypes.has('postgres');
 
   for (const service of config.services) {
     const requirement = typeRequirements[service.type];
@@ -50,8 +56,25 @@ export function validateSemantics(
         }
       }
     }
+
+    if ((service.type === 'jwt' || service.type === 'oauth') && !hasDb) {
+      errors.push(
+        `Semantic Error: Service "${service.id}" of type "${service.type}" requires a configured database ("mongodb" or "postgres").`
+      );
+    }
+
+    // Validate user version overrides if supplied in options
+    const opts = service.options as Record<string, unknown> | undefined;
+    const userDeps = (opts?.dependencies as Record<string, string>) || {};
+    const userDevDeps = (opts?.devDependencies as Record<string, string>) || {};
+
+    for (const [pkg, range] of Object.entries({ ...userDeps, ...userDevDeps })) {
+      const check = validateVersionOverride(pkg, range);
+      if (!check.valid) {
+        errors.push(`Service "${service.id}" version override error: ${check.error}`);
+      }
+    }
   }
 
   return { valid: errors.length === 0, errors };
 }
-

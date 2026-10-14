@@ -1,13 +1,12 @@
 import { addFile } from '../../engine/emitter.js';
 import type { Hook, ModuleBootstrapConfig } from '../../engine/types.js';
+import { buildDependencies } from '../../engine/catalog.js';
 
 export const id = 'db:mongodb';
-export const provides: string[] = ['db:mongodb'];
+export const provides: string[] = ['db:mongodb', 'core:database'];
 export const requires: string[] = ['core:express'];
 
-export const dependencies: Record<string, string> = {
-  'mongoose': '^8.13.2',
-};
+export const dependencies: Record<string, string> = buildDependencies(['mongoose']);
 
 export const envVars = `MONGODB_URI=mongodb://localhost:27017`;
 

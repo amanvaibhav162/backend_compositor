@@ -11,12 +11,14 @@ import { generateFlakeNix, generateShellNix } from './nixEmitter.js';
 
 import * as coreExpress from '../modules/core-express/index.js';
 import * as dbMongodb from '../modules/db-mongodb/index.js';
+import * as dbPostgres from '../modules/db-postgres/index.js';
 import * as authJwt from '../modules/auth-jwt/index.js';
 import * as authOauth from '../modules/auth-oauth/index.js';
 
 const MODULE_REGISTRY: Record<string, ModuleDefinition> = {
   [coreExpress.id]: coreExpress,
   [dbMongodb.id]: dbMongodb,
+  [dbPostgres.id]: dbPostgres,
   [authJwt.id]: authJwt,
   [authOauth.id]: authOauth,
 };
@@ -24,6 +26,7 @@ const MODULE_REGISTRY: Record<string, ModuleDefinition> = {
 const TYPE_TO_MODULE: Record<string, string> = {
   express: 'core:express',
   mongodb: 'db:mongodb',
+  postgres: 'db:postgres',
   jwt: 'auth:jwt',
   oauth: 'auth:oauth',
 };
@@ -73,9 +76,11 @@ export function buildIR(rawConfig: Record<string, unknown>): { ir: IR; execution
         type: svc.type,
         moduleId,
         dependsOn: mod.requires.map((req) => {
-          const matchingSvc = internalConfig.services.find(
-            (s) => (TYPE_TO_MODULE[s.type] ?? s.type) === req
-          );
+          const matchingSvc = internalConfig.services.find((s) => {
+            const sModuleId = TYPE_TO_MODULE[s.type] ?? s.type;
+            const sMod = MODULE_REGISTRY[sModuleId];
+            return sMod?.provides?.includes(req) || sModuleId === req;
+          });
           if (!matchingSvc) {
             throw new Error(`Dependency Error: Service "${svc.id}" (${svc.type}) requires "${req}", but no configured service provides it.`);
           }
@@ -130,6 +135,7 @@ export async function runPipeline(
       const bootstrapConfig: ModuleBootstrapConfig = {
         ...rawConfig,
         project: ir.project,
+        services: ir.services.map((s) => s.config),
         options: (irSvc.config?.options as Record<string, unknown>) || {},
       };
       await mod.bootstrap(bootstrapConfig, resolveSlot);
@@ -144,23 +150,55 @@ export async function runPipeline(
     const irSvc = ir.services.find((s) => s.id === serviceId)!;
     const mod = MODULE_REGISTRY[irSvc.moduleId];
 
+    const userOpts = irSvc.config?.options as Record<string, unknown> | undefined;
+    const userDeps = ((userOpts?.dependencies as Record<string, string>) || {}) as Record<string, string>;
+    const userDevDeps = ((userOpts?.devDependencies as Record<string, string>) || {}) as Record<string, string>;
+
     if (mod.dependencies) {
-      for (const [name, range] of Object.entries(mod.dependencies)) {
+      for (const [name, defaultRange] of Object.entries(mod.dependencies)) {
+        const range: string = userDeps[name] || defaultRange;
+        const requestedBy = userDeps[name] ? `user-override:${irSvc.id}` : mod.id;
         demands.push({
           name,
           range,
-          requestedBy: mod.id,
+          requestedBy,
+          isDev: false,
+        });
+      }
+    }
+
+    // Additional user-specified production dependencies
+    for (const [name, range] of Object.entries(userDeps)) {
+      if (!mod.dependencies || !(name in mod.dependencies)) {
+        demands.push({
+          name,
+          range,
+          requestedBy: `user-custom:${irSvc.id}`,
           isDev: false,
         });
       }
     }
 
     if (mod.devDependencies) {
-      for (const [name, range] of Object.entries(mod.devDependencies)) {
+      for (const [name, defaultRange] of Object.entries(mod.devDependencies)) {
+        const range: string = userDevDeps[name] || defaultRange;
+        const requestedBy = userDevDeps[name] ? `user-override:${irSvc.id}` : mod.id;
         demands.push({
           name,
           range,
-          requestedBy: mod.id,
+          requestedBy,
+          isDev: true,
+        });
+      }
+    }
+
+    // Additional user-specified devDependencies
+    for (const [name, range] of Object.entries(userDevDeps)) {
+      if (!mod.devDependencies || !(name in mod.devDependencies)) {
+        demands.push({
+          name,
+          range,
+          requestedBy: `user-custom:${irSvc.id}`,
           isDev: true,
         });
       }
@@ -194,10 +232,12 @@ export async function runPipeline(
   const shouldEmitNix = options?.nix ?? ir.project.nix ?? hostInventory.hasNix;
   if (shouldEmitNix) {
     const hasMongo = ir.services.some((s) => s.type === 'mongodb');
+    const hasPostgres = ir.services.some((s) => s.type === 'postgres');
     const flakeContent = generateFlakeNix({
       projectName: ir.project.name,
       hostInventory,
       hasMongo,
+      hasPostgres,
     });
     addFile('flake.nix', flakeContent);
 
@@ -205,6 +245,7 @@ export async function runPipeline(
       projectName: ir.project.name,
       hostInventory,
       hasMongo,
+      hasPostgres,
     });
     addFile('shell.nix', shellContent);
   }
@@ -227,17 +268,26 @@ export async function runPipeline(
   };
   addFile('tsconfig.json', JSON.stringify(tsconfig, null, 2) + '\n');
 
-  // Resolved package.json
+  // Resolved package.json scripts
+  const hasPostgres = ir.services.some((s) => s.type === 'postgres');
+  const scripts: Record<string, string> = {
+    build: 'tsc',
+    start: 'node dist/index.js',
+    dev: 'tsx watch src/index.ts',
+    typecheck: 'tsc --noEmit',
+  };
+
+  if (hasPostgres) {
+    scripts['db:generate'] = 'drizzle-kit generate';
+    scripts['db:migrate'] = 'drizzle-kit migrate';
+    scripts['db:studio'] = 'drizzle-kit studio';
+  }
+
   const packageJson = {
     name: ir.project.name,
     version: '1.0.0',
     type: 'module',
-    scripts: {
-      build: 'tsc',
-      start: 'node dist/index.js',
-      dev: 'tsx watch src/index.ts',
-      typecheck: 'tsc --noEmit',
-    },
+    scripts,
     dependencies: solverResult.dependencies,
     devDependencies: solverResult.devDependencies,
   };
@@ -261,6 +311,10 @@ export async function runPipeline(
     ? `\n## Nix Hermetic Development Shell\n\n\`\`\`bash\n# Enter reproducible Nix devshell\nnix develop\n# Or with traditional nix-shell\nnix-shell\n\`\`\`\n`
     : '';
 
+  const dbCommandsSection = hasPostgres
+    ? `\n### Database & Migrations (Drizzle ORM)\n\n\`\`\`bash\n# Generate migration files from schema\n${hostInventory.packageManager === 'npm' ? 'npm run' : hostInventory.packageManager} db:generate\n\n# Apply migrations to PostgreSQL\n${hostInventory.packageManager === 'npm' ? 'npm run' : hostInventory.packageManager} db:migrate\n\n# Open Drizzle Studio visual editor\n${hostInventory.packageManager === 'npm' ? 'npm run' : hostInventory.packageManager} db:studio\n\`\`\`\n`
+    : '';
+
   addFile(
     'README.md',
     `# ${ir.project.name}
@@ -272,7 +326,7 @@ Generated by **BackForge** — Deterministic Backend Composition Engine.
 - **Runtime:** Node.js (v${hostInventory.nodeVersion}, ES2022 / NodeNext ESM)
 - **Language:** Strict TypeScript (100% type-checked)
 - **Framework:** Express.js with Helmet security headers & rate limiting
-- **Utilities:** \`asyncHandler\`, \`ApiError\`, \`ApiResponse\`
+${hasPostgres ? '- **Database:** PostgreSQL with Drizzle ORM\n' : ir.services.some((s) => s.type === 'mongodb') ? '- **Database:** MongoDB with Mongoose\n' : ''}- **Utilities:** \`asyncHandler\`, \`ApiError\`, \`ApiResponse\`
 - **Lockfile:** \`backforge.lock\` (Content-Addressable Verification)
 ${nixSection}
 ## Quick Start
@@ -291,7 +345,7 @@ ${hostInventory.packageManager === 'npm' ? 'npm run' : hostInventory.packageMana
 ${hostInventory.packageManager === 'npm' ? 'npm run' : hostInventory.packageManager} build
 ${hostInventory.packageManager === 'npm' ? 'npm run' : hostInventory.packageManager} start
 \`\`\`
-`
+${dbCommandsSection}`
   );
 
   return {
